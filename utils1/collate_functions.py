@@ -14,12 +14,12 @@ def collate_pair(list_data):
     point2 = [item[0] for item in list_data]
     # print(np.asarray(point2[0]).shape)
     point1 = [item[1] for item in list_data]
-
-    sample_id = torch.from_numpy(np.asarray([item[2] for item in list_data]))
-    T_gt = torch.from_numpy(np.asarray([item[3] for item in list_data]))
-    T_trans = torch.from_numpy(np.asarray([item[4] for item in list_data]))
-    T_trans_inv = torch.from_numpy(np.asarray([item[5] for item in list_data]))
-    Tr = torch.from_numpy(np.asarray([item[6] for item in list_data]))
+    label2 = [item[2] for item in list_data]
+    sample_id = torch.from_numpy(np.asarray([item[3] for item in list_data]))
+    T_gt = torch.from_numpy(np.asarray([item[4] for item in list_data]))
+    T_trans = torch.from_numpy(np.asarray([item[5] for item in list_data]))
+    T_trans_inv = torch.from_numpy(np.asarray([item[6] for item in list_data]))
+    Tr = torch.from_numpy(np.asarray([item[7] for item in list_data]))
 
 
     # Collate as normal, other than fields that cannot be collated due to differing sizes,
@@ -32,4 +32,4 @@ def collate_pair(list_data):
     # data['T_trans_inv'] = torch.stack([list_data[b]['T_trans_inv'] for b in range(batch_sz)], dim=0)  # (B, 4, 4)
     # data['Tr'] = torch.stack([list_data[b]['Tr'] for b in range(batch_sz)], dim=0)  # (B, 4, 4)
 
-    return point2, point1, sample_id, T_gt, T_trans, T_trans_inv, Tr
+    return point2, point1, label2, sample_id, T_gt, T_trans, T_trans_inv, Tr

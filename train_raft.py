@@ -7,6 +7,7 @@ import datetime
 import torch.utils.data
 import numpy as np
 import time
+import yaml
 
 from tqdm import tqdm
 
@@ -14,12 +15,16 @@ from configs import translonet_args
 from tools.excel_tools import SaveExcel
 from tools.euler_tools import quat2mat
 from tools.logger_tools import log_print, creat_logger
-from kitti_pytorch import points_dataset
-from pwclo_model import pwclo_model, get_loss
+from kitti_pytorch import semantic_points_dataset
+from raft.raft import RAFT
 from utils1.collate_functions import collate_pair
+from raft.segment_losses import SegmentLoss
+from translo_model_utils import ProjectPCimg2SphericalRing
+from ioueval import iouEval
 
 
-
+f = open('dataset_config.yaml')
+dataset_config = yaml.load(f, Loader=yaml.FullLoader)
 
 args = translonet_args()
 
@@ -41,17 +46,17 @@ if not os.path.exists(log_dir): os.makedirs(log_dir)
 checkpoints_dir = os.path.join(file_dir, 'checkpoints/translonet')
 if not os.path.exists(checkpoints_dir): os.makedirs(checkpoints_dir)
 
-os.system('cp %s %s' % ('train.py', log_dir))
-os.system('cp %s %s' % ('configs.py', log_dir))
-os.system('cp %s %s' % ('translo_model.py', log_dir))
-os.system('cp %s %s' % ('conv_util.py', log_dir))
-os.system('cp %s %s' % ('kitti_pytorch.py', log_dir))
+# os.system('cp %s %s' % ('train.py', log_dir))
+# os.system('cp %s %s' % ('configs.py', log_dir))
+# os.system('cp %s %s' % ('translo_model.py', log_dir))
+# os.system('cp %s %s' % ('conv_util.py', log_dir))
+# os.system('cp %s %s' % ('kitti_pytorch.py', log_dir))
 
 '''LOG'''
 
 def main():
 
-    global args
+    global args, dataset_config
 
     train_dir_list = [1]#[0, 1, 2, 3, 4, 5, 6]
     test_dir_list = [1]#[7, 8, 9, 10]
@@ -61,13 +66,13 @@ def main():
     logger.info('PARAMETER ...')
     logger.info(args)
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
-    excel_eval = SaveExcel(test_dir_list, log_dir)
-    model = pwclo_model(args, args.batch_size, args.H_input, args.W_input, args.is_training)
-
+    # excel_eval = SaveExcel(test_dir_list, log_dir)
+    model = RAFT(args)
+    loss_fn = SegmentLoss(dataset_config).cuda()
     # train set
-    train_dataset = points_dataset(
+    train_dataset = semantic_points_dataset(
         is_training = 1,
         num_point=args.num_points,
         data_dir_list=train_dir_list,
@@ -80,6 +85,7 @@ def main():
         num_workers=args.workers,
         collate_fn=collate_pair,
         pin_memory=True,
+        drop_last=True,
         worker_init_fn=lambda x: np.random.seed((torch.initial_seed()) % (2 ** 32))
     )#collate_fn=collate_pair,
 
@@ -120,9 +126,8 @@ def main():
 
 
     # eval once before training
-    
-    if args.eval_before == 1:
-        eval_pose(model, test_dir_list, init_epoch)
+    # if args.eval_before == 1:
+    #     eval(model, test_dir_list, init_epoch)
         # excel_eval.update(eval_dir)
 
     for epoch in range(init_epoch + 1, args.max_epoch):
@@ -131,31 +136,41 @@ def main():
         optimizer.zero_grad()
 
         for i, data in tqdm(enumerate(train_loader, 0), total=len(train_loader), smoothing=0.9):
-            
+        # for i, data in enumerate(train_loader, 0):  
             torch.cuda.synchronize()
             start_train_one_batch = time.time()
 
-            pos2, pos1, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
+            pos2, pos1, label2, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
             # print(type(sample_id))
             # sample_id = sample_id.cpu().detach().numpy()
             # print(type(pos2[0]))
             torch.cuda.synchronize()
             #print('load_data_time: ', time.time() - start_train_one_batch)
+
             pos2 = [b.cuda() for b in pos2]
             pos1 = [b.cuda() for b in pos1]
+            label2 = [b.cuda() for b in label2]
+            
+            _, img_label2 = ProjectPCimg2SphericalRing(pos2, label2, args.H_input, args.W_input)
+            
             T_trans = T_trans.cuda().to(torch.float32)
             T_trans_inv = T_trans_inv.cuda().to(torch.float32)
             T_gt = T_gt.cuda().to(torch.float32)
+            
+            # 利用变换矩阵T_gt将pos1转换到pos2
+            trans_pos1 = []
+            for i, p1 in enumerate(pos1, 0):
+                padp = torch.ones(p1.shape[0]).unsqueeze(1).cuda()
+                hom_p1 = torch.cat([p1, padp], dim=1).transpose(0,1)
+                trans_pos1.append(torch.mm(T_gt[i], hom_p1).transpose(0,1)[:,:-1])
+
             model = model.train()
-
-
-            # visual1 = imback2.cpu().detach().numpy()
-            # np.save('visual/img_90{}'.format(sample_id), visual1)
 
             torch.cuda.synchronize()
             #print('load_data_time + model_trans_time: ', time.time() - start_train_one_batch)
-            l0_q, l0_t, l1_q, l1_t, l2_q, l2_t, l3_q, l3_t, pc1_ouput, q_gt, t_gt, w_x, w_q = model(pos2, pos1, T_gt, T_trans, T_trans_inv)
-            loss = get_loss(l0_q, l0_t, l1_q, l1_t, l2_q, l2_t, l3_q, l3_t, q_gt, t_gt, w_x, w_q)
+            predict = model(pos2, trans_pos1)
+            wce, jacc = loss_fn(img_label2.squeeze(), predict[-1])
+            loss = wce + jacc
             # visual2 = xyz1.cpu().detach().numpy()
             # np.save('visual/pos_proj_90{}'.format(sample_id), visual2)
             torch.cuda.synchronize()
@@ -192,13 +207,14 @@ def main():
             }, save_path)
             log_print(logger, 'Save {}...'.format(model.__class__.__name__))
 
-            eval_pose(model, test_dir_list, epoch)
+            # eval(model, test_dir_list, epoch)
             # excel_eval.update(eval_dir)
 
 
-def eval_pose(model, test_list, epoch):
+def eval(model, test_list, epoch):
+    evaluator = iouEval(3, 'cuda', 0)
     for item in test_list:
-        test_dataset = points_dataset(
+        test_dataset = semantic_points_dataset(
             is_training = 0,
             num_point = args.num_points,
             data_dir_list = [item],
@@ -221,16 +237,26 @@ def eval_pose(model, test_list, epoch):
 
             torch.cuda.synchronize()
             start_prepare = time.time()
-            pos2, pos1, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
+            pos2, pos1, label2, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
 
             torch.cuda.synchronize()
-            #print('data_prepare_time: ', time.time() - start_prepare)
 
             pos2 = [b.cuda() for b in pos2]
             pos1 = [b.cuda() for b in pos1]
+            label2 = [b.cuda() for b in label2]
+            
+            _, img_label2 = ProjectPCimg2SphericalRing(pos2, label2, args.H_input, args.W_input)
+            
             T_trans = T_trans.cuda().to(torch.float32)
             T_trans_inv = T_trans_inv.cuda().to(torch.float32)
             T_gt = T_gt.cuda().to(torch.float32)
+            
+            # 利用变换矩阵T_gt将pos1转换到pos2
+            trans_pos1 = []
+            for i, p1 in enumerate(pos1, 0):
+                padp = torch.ones(p1.shape[0]).unsqueeze(1).cuda()
+                hom_p1 = torch.cat([p1, padp], dim=1).transpose(0,1)
+                trans_pos1.append(torch.mm(T_gt[i], hom_p1).transpose(0,1)[:,:-1])
 
             model = model.eval()
 
@@ -239,65 +265,22 @@ def eval_pose(model, test_list, epoch):
                 torch.cuda.synchronize()
                 start_time = time.time()
 
-                l0_q, l0_t, l1_q, l1_t, l2_q, l2_t, l3_q, l3_t, pc1_ouput, q_gt, t_gt, w_x, w_q = model(pos2, pos1, T_gt, T_trans, T_trans_inv)
-
-                torch.cuda.synchronize()
+                output = model(pos2, trans_pos1)
+                # torch.cuda.synchronize()
                 #print('eval_one_time: ', time.time() - start_time)
 
                 torch.cuda.synchronize()
                 total_time += (time.time() - start_time)
-
-
-                pc1_sample_2048 = pc1_ouput.cpu()
-                l0_q = l0_q.cpu()
-                l0_t = l0_t.cpu()
-                pc1 = pc1_sample_2048.numpy()
-                pred_q = l0_q.numpy()
-                pred_t = l0_t.numpy()
-
-                # deal with a batch_size
-                for n0 in range(pc1.shape[0]):
-
-                    cur_Tr = Tr[n0, :, :]
-
-                    qq = pred_q[n0:n0 + 1, :]
-                    qq = qq.reshape(4)
-                    tt = pred_t[n0:n0 + 1, :]
-                    tt = tt.reshape(3, 1)
-                    RR = quat2mat(qq)
-                    filler = np.array([0.0, 0.0, 0.0, 1.0])
-                    filler = np.expand_dims(filler, axis=0)  ##1*4
-
-                    TT = np.concatenate([np.concatenate([RR, tt], axis=-1), filler], axis=0)
-
-                    TT = np.matmul(cur_Tr, TT)
-                    TT = np.matmul(TT, np.linalg.inv(cur_Tr))
-
-                    if line == 0:
-                        T_final = TT
-                        T = T_final[:3, :]
-                        T = T.reshape(1, 1, 12)
-                        line += 1
-                    else:
-                        T_final = np.matmul(T_final, TT)
-                        T_current = T_final[:3, :]
-                        T_current = T_current.reshape(1, 1, 12)
-                        T = np.append(T, T_current, axis=0)
+                argmax = output[-1].argmax(dim=1)
+                evaluator.addBatch(argmax, img_label2.squeeze())
+                
+        accuracy = evaluator.getacc()
+        jaccard, class_jaccard = evaluator.getIoU()
+        print("accuracy: ",accuracy, "jaccard: ",jaccard, "class_jaccard: ",class_jaccard)
         
         avg_time = total_time / 4541
         #print('avg_time: ', avg_time)
 
-        T = T.reshape(-1, 12)
-
-        fname_txt = os.path.join(log_dir, str(item).zfill(2) + '_pred.npy')
-        data_dir = os.path.join(eval_dir, 'translonet_' + str(item).zfill(2))
-        if not os.path.exists(data_dir):
-            os.makedirs(data_dir)
-
-        np.save(fname_txt, T)
-        os.system('cp %s %s' % (fname_txt, data_dir))  ###SAVE THE txt FILE
-        os.system('python evaluation.py --result_dir ' + data_dir + ' --eva_seqs ' + str(item).zfill(
-            2) + '_pred' + ' --epoch ' + str(epoch))
     return 0
 
 

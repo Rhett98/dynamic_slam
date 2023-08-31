@@ -30,7 +30,7 @@ def translonet_args():
     parser.add_argument('--weight_decay', type=int, default=0.0001, help='The Weight decay [default : 0.0001]')
     parser.add_argument('--workers', type=int, default=2,
                         help='Sets how many child processes can be used [default : 16]')
-    parser.add_argument('--model_name', type=str, default='pwclonet', help='base_dir_name [default: pwclonet]')
+    parser.add_argument('--model_name', type=str, default='raftnet', help='base_dir_name [default: pwclonet]')
     parser.add_argument('--task_name', type=str, default=None, help='who can replace model_name ')
     parser.add_argument('--learning_rate', type=float, default=0.001, help='Initial learning rate [default: 0.001]')
 
