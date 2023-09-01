@@ -330,13 +330,22 @@ if __name__ == '__main__':
     )
     for i, data in enumerate(train_dataset):
         p2, p1, l2, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
-        print(p2)
-        print(p1)
-        T_gt = torch.from_numpy(T_gt).float()
+        # print(p2)
+        # print(p1)
+        ca, cb, cc = 0, 0, 0
+        for i in l2:
+            if i == 0:
+                ca+=1
+            if i == 1:
+                cb+=1
+            if i == 2:
+                cc+=1
+        print("num of point: ", ca, cb, cc)
+        # T_gt = torch.from_numpy(T_gt).float()
         # print(T_gt)
-        padp = torch.ones(p1.shape[0]).unsqueeze(1)
-        hom_pc1 = torch.cat([p1, padp], dim=1).transpose(0,1)
-        trans_pc1 = torch.mm(T_gt, hom_pc1).transpose(0,1)[:,:-1]
-        print(trans_pc1)
+        # padp = torch.ones(p1.shape[0]).unsqueeze(1)
+        # hom_pc1 = torch.cat([p1, padp], dim=1).transpose(0,1)
+        # trans_pc1 = torch.mm(T_gt, hom_pc1).transpose(0,1)[:,:-1]
+        # print(trans_pc1)
         print("__________________")
         # break

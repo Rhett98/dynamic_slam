@@ -54,12 +54,43 @@ if not os.path.exists(checkpoints_dir): os.makedirs(checkpoints_dir)
 
 '''LOG'''
 
+def sequence_loss(pred_list, label_gt, loss_fn, gamma=0.8):
+    """ Loss function defined over sequence of predictions """
+
+    n_predictions = len(pred_list)    
+    seq_loss = 0.0
+
+    for i in range(n_predictions):
+        i_weight = gamma**(n_predictions - i - 1)
+        wce, jacc = loss_fn(label_gt, pred_list[i])
+        seq_loss += i_weight * (wce + jacc)
+
+    return seq_loss
+
+class AverageMeter(object):
+    """Computes and stores the average and current value"""
+
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
 def main():
 
     global args, dataset_config
 
-    train_dir_list = [1]#[0, 1, 2, 3, 4, 5, 6]
-    test_dir_list = [1]#[7, 8, 9, 10]
+    train_dir_list = [1, 6, 7, 8]#[0, 1, 2, 3, 4, 5, 6]
+    test_dir_list = [9]#[7, 8, 9, 10]
 
     logger = creat_logger(log_dir, args.model_name)
     logger.info('----------------------------------------TRAINING----------------------------------')
@@ -126,8 +157,8 @@ def main():
 
 
     # eval once before training
-    # if args.eval_before == 1:
-    #     eval(model, test_dir_list, init_epoch)
+    if args.eval_before == 1:
+        eval(model, test_dir_list, init_epoch)
         # excel_eval.update(eval_dir)
 
     for epoch in range(init_epoch + 1, args.max_epoch):
@@ -169,8 +200,8 @@ def main():
             torch.cuda.synchronize()
             #print('load_data_time + model_trans_time: ', time.time() - start_train_one_batch)
             predict = model(pos2, trans_pos1)
-            wce, jacc = loss_fn(img_label2.squeeze(), predict[-1])
-            loss = wce + jacc
+            loss = sequence_loss(predict, img_label2.squeeze(), loss_fn)
+            # print("loss: ", loss.data)
             # visual2 = xyz1.cpu().detach().numpy()
             # np.save('visual/pos_proj_90{}'.format(sample_id), visual2)
             torch.cuda.synchronize()
@@ -207,12 +238,14 @@ def main():
             }, save_path)
             log_print(logger, 'Save {}...'.format(model.__class__.__name__))
 
-            # eval(model, test_dir_list, epoch)
+            eval(model, test_dir_list, epoch)
             # excel_eval.update(eval_dir)
 
 
 def eval(model, test_list, epoch):
-    evaluator = iouEval(3, 'cuda', 0)
+    evaluator = iouEval(3, 'cuda', [0])
+    acc = AverageMeter()
+    iou = AverageMeter()
     for item in test_list:
         test_dataset = semantic_points_dataset(
             is_training = 0,
@@ -272,11 +305,16 @@ def eval(model, test_list, epoch):
                 torch.cuda.synchronize()
                 total_time += (time.time() - start_time)
                 argmax = output[-1].argmax(dim=1)
-                evaluator.addBatch(argmax, img_label2.squeeze())
+                evaluator.reset()
+                # print(argmax.shape)
+                # print(img_label2.squeeze())
+                evaluator.addBatch(argmax.long(), img_label2.squeeze().long())
+                accuracy = evaluator.getacc()
+                jaccard, class_jaccard = evaluator.getIoU()
                 
-        accuracy = evaluator.getacc()
-        jaccard, class_jaccard = evaluator.getIoU()
-        print("accuracy: ",accuracy, "jaccard: ",jaccard, "class_jaccard: ",class_jaccard)
+            acc.update(accuracy.item(), len(pos2))
+            iou.update(jaccard, len(pos2))
+        print("accuracy: ",acc.avg, "iou: ",iou.avg)
         
         avg_time = total_time / 4541
         #print('avg_time: ', avg_time)
