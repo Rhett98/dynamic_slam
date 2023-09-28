@@ -2,7 +2,7 @@
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
-
+import scipy.spatial
 try:
     from itertools import ifilterfalse
 except ImportError:
@@ -175,4 +175,31 @@ class SegmentLoss(nn.Module):
         
     def forward(self, label, output):         
         wce, jacc = self.nll_loss(torch.log(output.clamp(min=1e-8)), label.long()) , self.Ls(output, label.long())
-        return wce, jacc
+        return wce + jacc
+
+
+class KDPointToPointLoss(nn.Module):
+    def __init__(self):
+        super(KDPointToPointLoss, self).__init__()
+        self.lossMeanMSE = torch.nn.MSELoss()
+        self.lossPointMSE = torch.nn.MSELoss(reduction="none")
+        
+    def find_target_correspondences(self, kd_tree_target, source_list_numpy):
+        target_correspondence_indices = kd_tree_target[0].query(source_list_numpy[0])[1]
+        return target_correspondence_indices
+
+    def forward(self, source_point_cloud, target_point_cloud):
+        # convert img to pointcloud
+        B,_, H, W = source_point_cloud.shape
+        source_point_cloud = source_point_cloud.view(B, -1, H*W)
+        target_point_cloud = target_point_cloud.view(B, -1, H*W)
+        # Build kd-tree
+        target_kd_tree = [scipy.spatial.cKDTree(target_point_cloud[0].permute(1, 0).detach().cpu().numpy())]
+
+        # Find corresponding target points for all source points
+        target_correspondences_of_source_points = \
+            torch.from_numpy(self.find_target_correspondences(
+                kd_tree_target=target_kd_tree,
+                source_list_numpy=source_point_cloud.permute(0, 2, 1).detach().cpu().numpy()))
+        target_points = target_point_cloud[:, :, target_correspondences_of_source_points]
+        return self.lossMeanMSE(source_point_cloud, target_points)

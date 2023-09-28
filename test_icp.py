@@ -1,0 +1,58 @@
+# import numpy as np
+# import torch
+# from scipy.spatial import cKDTree
+
+# # 准备两个点云数据集
+# # point_cloud1 = np.random.rand(100, 3)  # 第一个点云，包含100个点，每个点有3个坐标
+# # point_cloud2 = np.random.rand(150, 3)  # 第二个点云，包含150个点，每个点有3个坐标
+# pc1 = np.fromfile("demo_pc/velodyne/000000.bin", dtype=np.float32).reshape(-1, 4)
+# pc2 = np.fromfile("demo_pc/velodyne/000001.bin", dtype=np.float32).reshape(-1, 4)
+# point_cloud1 = pc1[:, :3].astype(np.float32)
+# point_cloud2 = pc2[:, :3].astype(np.float32)
+# # 构建KNN树
+# kdtree1 = cKDTree(point_cloud1)
+# kdtree2 = cKDTree(point_cloud2)
+
+# # 设置K值，即要计算的最近邻的数量
+# K = 5
+
+# # 计算每个点与其K个最近邻点之间的平均距离
+# print(kdtree2.query(point_cloud1, k=K)[0])
+# average_distance1 = np.mean(kdtree2.query(point_cloud1, k=K)[0])
+# average_distance2 = np.mean(kdtree1.query(point_cloud2, k=K)[0])
+
+# # 汇总损失，例如取平均值
+# loss = 0.5 * (average_distance1 + average_distance2)
+
+# print("平均距离损失:", loss)
+
+import torch
+
+# Make sure your CUDA is available.
+assert torch.cuda.is_available()
+
+from knn_cuda import KNN
+"""
+if transpose_mode is True, 
+    ref   is Tensor [bs x nr x dim]
+    query is Tensor [bs x nq x dim]
+    
+    return 
+        dist is Tensor [bs x nq x k]
+        indx is Tensor [bs x nq x k]
+else
+    ref   is Tensor [bs x dim x nr]
+    query is Tensor [bs x dim x nq]
+    
+    return 
+        dist is Tensor [bs x k x nq]
+        indx is Tensor [bs x k x nq]
+"""
+
+knn = KNN(k=5, transpose_mode=True)
+
+ref = torch.rand(2, 8000, 3).cuda()
+query = torch.rand(2, 8100, 3).cuda()
+
+dist, indx = knn(ref, query)  # 32 x 50 x 10
+print(torch.mean(dist))

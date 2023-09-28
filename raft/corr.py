@@ -14,9 +14,8 @@ class CorrBlock:
         self.num_levels = num_levels
         self.radius = radius
         self.corr_pyramid = []
-
         # all pairs correlation
-        corr = CorrBlock.corr(fmap1, fmap2)
+        corr = CorrBlock.corr(fmap1, fmap2) #[2, 8, 224, 1, 8, 224]
         batch, h1, w1, dim, h2, w2 = corr.shape
         corr = corr.reshape(batch*h1*w1, dim, h2, w2)
         # print("corr shape")
@@ -26,6 +25,8 @@ class CorrBlock:
             corr = F.avg_pool2d(corr, 2, stride=2)
             # print(corr.shape)
             self.corr_pyramid.append(corr)
+        # for it in self.corr_pyramid:
+        #     print(it.shape)
 
     def __call__(self, coords):
         r = self.radius
@@ -43,7 +44,9 @@ class CorrBlock:
             centroid_lvl = coords.reshape(batch*h1*w1, 1, 1, 2) / 2**i
             delta_lvl = delta.view(1, 2*r+1, 2*r+1, 2)
             coords_lvl = centroid_lvl + delta_lvl
-
+            # print(corr)
+            # print("____")
+            # print(coords_lvl)
             corr = bilinear_sampler(corr, coords_lvl)
             corr = corr.view(batch, h1, w1, -1)
             out_pyramid.append(corr)
@@ -53,11 +56,11 @@ class CorrBlock:
 
     @staticmethod
     def corr(fmap1, fmap2):
-        batch, dim, ht, wd = fmap1.shape
+        batch, dim, ht, wd = fmap1.shape #[2 256 8 224]
         fmap1 = fmap1.view(batch, dim, ht*wd)
         fmap2 = fmap2.view(batch, dim, ht*wd) 
-        
-        corr = torch.matmul(fmap1.transpose(1,2), fmap2)
+
+        corr = torch.matmul(fmap1.transpose(1,2), fmap2) #[2, 1792, 1792]
         corr = corr.view(batch, ht, wd, 1, ht, wd)
         return corr  / torch.sqrt(torch.tensor(dim).float())
 

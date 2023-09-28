@@ -118,7 +118,8 @@ class BasicUpdateBlock(nn.Module):
         self.encoder = BasicMotionEncoder(args)
         self.gru = SepConvGRU(hidden_dim=hidden_dim, input_dim=128+hidden_dim)
         self.flow_head = FlowHead(hidden_dim, hidden_dim=256)
-
+        # self.hard_w = nn.Hardtanh(-500, 500, inplace=True)
+        # self.hard_h = nn.Hardtanh(-2, 2, inplace=True)
         self.mask = nn.Sequential(
             nn.Conv2d(128, 256, 3, padding=1),
             nn.ReLU(inplace=True),
@@ -127,14 +128,20 @@ class BasicUpdateBlock(nn.Module):
     def forward(self, net, inp, corr, flow, upsample=True):
         # print("flow, corr:",flow, corr)
         motion_features = self.encoder(flow, corr)
-        # print("motion_features:", motion_features)
+        # print("motion_features:", motion_features.shape)
         inp = torch.cat([inp, motion_features], dim=1)
 
         net = self.gru(net, inp)
         delta_flow = self.flow_head(net)
+        # # print(delta_flow.shape)
+        # delta_flow_w = self.hard_w(delta_flow[:,0,:,:])
+        # # delta_flow_h = self.hard_h(delta_flow[:,1,:,:])
+        # delta_flow_h = torch.zeros_like(delta_flow_w)
+        # delta_flow = torch.concat([delta_flow_w.unsqueeze(1), delta_flow_h.unsqueeze(1)], dim=1)
 
         # scale mask to balence gradients
         mask = .25 * self.mask(net)
+        # print("mask",mask.shape)
         return net, mask, delta_flow
 
 

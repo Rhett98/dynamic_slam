@@ -40,7 +40,9 @@ class RAFT(nn.Module):
         self.fnet = BasicEncoder(output_dim=256, norm_fn='instance', dropout=args.dropout)        
         self.cnet = BasicEncoder(output_dim=hdim+cdim, norm_fn='batch', dropout=args.dropout)
         self.update_block = BasicUpdateBlock(self.args, hidden_dim=hdim)
-        self.predict_moving_net = nn.Conv2d(2, 3, 1)
+        self.predict_moving_net = nn.Sequential(nn.Conv2d(2, 9, 3, padding=1),
+                                                nn.Conv2d(9, 3, 3, padding=1),)
+        
 
     def freeze_bn(self):
         for m in self.modules():
@@ -69,11 +71,44 @@ class RAFT(nn.Module):
         up_flow = up_flow.permute(0, 1, 4, 2, 5, 3)
         return up_flow.reshape(N, 2, 8*H, 8*W)
 
+    def warp_img(self, img, flow):
+        """ Warp img [B, 3, H, W] with flow [B, 2, H, W]"""
+            # 获取输入张量的尺寸
+        B, _, H, W = img.size()
 
-    def forward(self, pc1, pc2, iters=8, flow_init=None, upsample=True, test_mode=False):
+        # 创建目标张量，初始化为零
+        warped_img = torch.zeros_like(img).cuda()
+
+        # 生成采样网格
+        grid_x, grid_y = torch.meshgrid(torch.arange(H), torch.arange(W))
+        grid_x = grid_x.float().cuda()
+        grid_y = grid_y.float().cuda()
+
+        # 添加光流位移
+        grid_x = grid_x.unsqueeze(0).expand(B, -1, -1).contiguous()
+        grid_y = grid_y.unsqueeze(0).expand(B, -1, -1).contiguous()
+
+        grid_x += flow[:, 0, :, :]
+        grid_y += flow[:, 1, :, :]
+
+        # 归一化到[-1, 1]范围
+        grid_x = 2.0 * (grid_x / (H - 1)) - 1.0
+        grid_y = 2.0 * (grid_y / (W - 1)) - 1.0
+
+        # 扩展维度以匹配grid的维度
+        grid_x = grid_x.unsqueeze(3)
+        grid_y = grid_y.unsqueeze(3)
+
+        # 使用grid_sample进行双线性采样
+        grid = torch.cat((grid_x, grid_y), dim=3)
+        warped_img = F.grid_sample(img, grid, padding_mode='border', align_corners=True)
+
+        return warped_img
+
+    def forward(self, pc1, pc2, iters=8, flow_init=None):
         """ Estimate optical flow between pair of frames """
-        image1, mask_proj1 = ProjectPCimg2SphericalRing(pc1, None, self.H_input, self.W_input)
-        image2, mask_proj2 = ProjectPCimg2SphericalRing(pc2, None, self.H_input, self.W_input)
+        image1, _ = ProjectPCimg2SphericalRing(pc1, None, self.H_input, self.W_input)
+        image2, _ = ProjectPCimg2SphericalRing(pc2, None, self.H_input, self.W_input)
         image1 = image1.permute(0, 3, 1, 2).contiguous()
         image2 = image2.permute(0, 3, 1, 2).contiguous()
 
@@ -88,47 +123,54 @@ class RAFT(nn.Module):
         fmap2 = fmap2.float()
         
         # corr_fn = AlternateCorrBlock(fmap1, fmap2, radius=self.args.corr_radius)
-        corr_fn = CorrBlock(fmap1, fmap2,num_levels=self.args.corr_levels ,radius=self.args.corr_radius)
-
+        corr_fn = CorrBlock(fmap1, fmap2, num_levels=self.args.corr_levels ,radius=self.args.corr_radius)
         # run the context network
         cnet = self.cnet(image1)
         net, inp = torch.split(cnet, [hdim, cdim], dim=1)
         net = torch.tanh(net)
         inp = torch.relu(inp)
-        
+
         coords0, coords1 = self.initialize_flow(image1)
         # print("coords0:",coords0.shape)
         if flow_init is not None:
             coords1 = coords1 + flow_init
 
-        flow_predictions = []
-        moving_predict = []
+        # flow_predictions = []
+        warp_image1s = []
+        moving_predicts = []
         for itr in range(iters):
             # print("-------iter: ",itr,"-----------")
             coords1 = coords1.detach()
             corr = corr_fn(coords1) # index correlation volume
-
+            
+            # print(corr)
             flow = coords1 - coords0
 
             net, up_mask, delta_flow = self.update_block(net, inp, corr, flow)
 
             # F(t+1) = F(t) + \Delta(t)
+            # print(delta_flow)
+            # print(delta_flow[:,1,:,:])
+            # print(coords1[0,:,:,100:150])
             coords1 = coords1 + delta_flow
 
+            # print("__________")
+            # print(delta_flow[0,:,:,100])
             # upsample predictions
             if up_mask is None:
                 flow_up = upflow8(coords1 - coords0)
             else:
                 flow_up = self.upsample_flow(coords1 - coords0, up_mask)
             
-            flow_predictions.append(flow_up)
+            warp_image1 = self.warp_img(image1, flow_up)
             m_feature = self.predict_moving_net(flow_up)
-            moving_predict.append(F.softmax(m_feature, dim=1))
-
-        if test_mode:
-            return coords1 - coords0, flow_up
             
-        return moving_predict#flow_predictions
+            # add result to list
+            # flow_predictions.append(flow_up)
+            warp_image1s.append(warp_image1)
+            moving_predicts.append(F.softmax(m_feature, dim=1))
+            
+        return warp_image1s, moving_predicts
     
 
 if __name__ == '__main__':
@@ -167,3 +209,4 @@ if __name__ == '__main__':
     output = model(pc1, pc2)
     print(output[0])
     print(output[0].shape)
+    

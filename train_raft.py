@@ -18,7 +18,7 @@ from tools.logger_tools import log_print, creat_logger
 from kitti_pytorch import semantic_points_dataset
 from raft.raft import RAFT
 from utils1.collate_functions import collate_pair
-from raft.segment_losses import SegmentLoss
+from raft.segment_losses import SegmentLoss, KDPointToPointLoss
 from translo_model_utils import ProjectPCimg2SphericalRing
 from ioueval import iouEval
 
@@ -54,16 +54,16 @@ if not os.path.exists(checkpoints_dir): os.makedirs(checkpoints_dir)
 
 '''LOG'''
 
-def sequence_loss(pred_list, label_gt, loss_fn, gamma=0.8):
+def sequence_loss(pred_list, gt, loss_fn, gamma=0.8, gap=1):
     """ Loss function defined over sequence of predictions """
 
     n_predictions = len(pred_list)    
     seq_loss = 0.0
-
-    for i in range(n_predictions):
+    # label_gt = label_gt.unsqueeze(0)
+    for i in range(int(n_predictions/gap)):
         i_weight = gamma**(n_predictions - i - 1)
-        wce, jacc = loss_fn(label_gt, pred_list[i])
-        seq_loss += i_weight * (wce + jacc)
+        loss = loss_fn(gt, pred_list[i])
+        seq_loss += i_weight * (loss)
 
     return seq_loss
 
@@ -89,8 +89,8 @@ def main():
 
     global args, dataset_config
 
-    train_dir_list = [1, 6, 7, 8]#[0, 1, 2, 3, 4, 5, 6]
-    test_dir_list = [9]#[7, 8, 9, 10]
+    train_dir_list = [4]#[0, 1, 2, 3, 4, 5, 6]
+    test_dir_list = [4]#[7, 8, 9, 10]
 
     logger = creat_logger(log_dir, args.model_name)
     logger.info('----------------------------------------TRAINING----------------------------------')
@@ -99,9 +99,10 @@ def main():
 
     os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
-    # excel_eval = SaveExcel(test_dir_list, log_dir)
+    # excel_eval = SaveExcel(test_dir_list, log_dir)sequence_flow_loss
     model = RAFT(args)
-    loss_fn = SegmentLoss(dataset_config).cuda()
+    loss_fn1 = SegmentLoss(dataset_config).cuda()
+    loss_fn2 = KDPointToPointLoss()
     # train set
     train_dataset = semantic_points_dataset(
         is_training = 1,
@@ -153,40 +154,42 @@ def main():
 
     else:
         init_epoch = 0
-        log_print(logger, 'Training from scratch')
+        log_print(logger, 'Trainimage2, img_label2 = ProjectPCimg2SphericalRing(pos2, label2, args.H_input, args.W_input)ing from scratch')
 
 
-    # eval once before training
-    if args.eval_before == 1:
-        eval(model, test_dir_list, init_epoch)
-        # excel_eval.update(eval_dir)
+    # # eval once before training
+    # if args.eval_before == 1:
+    #     eval(model, test_dir_list, init_epoch, logger)
+    #     # excel_eval.update(eval_dir)
 
     for epoch in range(init_epoch + 1, args.max_epoch):
         total_loss = 0
         total_seen = 0
+        
+        evaluator = iouEval(3, 'cuda', [0])
+        acc = AverageMeter()
+        static_iou = AverageMeter()
+        moving_iou = AverageMeter()
+        icp_loss = AverageMeter()
+        
         optimizer.zero_grad()
-
+        torch.cuda.empty_cache()
+        model = model.train()
+        print("lr now: ", scheduler.get_last_lr())
         for i, data in tqdm(enumerate(train_loader, 0), total=len(train_loader), smoothing=0.9):
         # for i, data in enumerate(train_loader, 0):  
-            torch.cuda.synchronize()
-            start_train_one_batch = time.time()
 
             pos2, pos1, label2, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
-            # print(type(sample_id))
-            # sample_id = sample_id.cpu().detach().numpy()
-            # print(type(pos2[0]))
-            torch.cuda.synchronize()
-            #print('load_data_time: ', time.time() - start_train_one_batch)
-
             pos2 = [b.cuda() for b in pos2]
             pos1 = [b.cuda() for b in pos1]
             label2 = [b.cuda() for b in label2]
             
-            _, img_label2 = ProjectPCimg2SphericalRing(pos2, label2, args.H_input, args.W_input)
+            image2, img_label2 = ProjectPCimg2SphericalRing(pos2, label2, args.H_input, args.W_input)
             
             T_trans = T_trans.cuda().to(torch.float32)
             T_trans_inv = T_trans_inv.cuda().to(torch.float32)
-            T_gt = T_gt.cuda().to(torch.float32)
+
+            T_gt = torch.linalg.inv(T_gt.cuda().to(torch.float32))
             
             # 利用变换矩阵T_gt将pos1转换到pos2
             trans_pos1 = []
@@ -194,38 +197,46 @@ def main():
                 padp = torch.ones(p1.shape[0]).unsqueeze(1).cuda()
                 hom_p1 = torch.cat([p1, padp], dim=1).transpose(0,1)
                 trans_pos1.append(torch.mm(T_gt[i], hom_p1).transpose(0,1)[:,:-1])
-
-            model = model.train()
-
-            torch.cuda.synchronize()
-            #print('load_data_time + model_trans_time: ', time.time() - start_train_one_batch)
-            predict = model(pos2, trans_pos1)
-            loss = sequence_loss(predict, img_label2.squeeze(), loss_fn)
-            # print("loss: ", loss.data)
-            # visual2 = xyz1.cpu().detach().numpy()
-            # np.save('visual/pos_proj_90{}'.format(sample_id), visual2)
-            torch.cuda.synchronize()
-            #print('load_data_time + model_trans_time + forward ', time.time() - start_train_one_batch)
-
+            t1 = time.time()
+            warp_image1s, moving_predicts = model(pos2, trans_pos1)
+            t2 = time.time()
+            loss1 = sequence_loss(moving_predicts, img_label2.squeeze(), loss_fn1)
+            t3 = time.time()
+            loss2 = sequence_loss(warp_image1s, image2, loss_fn2, gap=2)
+            # print(loss2)
+            t4 = time.time()
+            loss = loss1 + 0.3*loss2
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            torch.cuda.synchronize()
-            #print('load_data_time + model_trans_time + forward + back_ward ', time.time() - start_train_one_batch)
-
-            if args.multi_gpu is not None:
-                total_loss += loss.mean().cpu().data * args.batch_size
-            else:
-                total_loss += loss.cpu().data * args.batch_size
+            # print("infer time:", t2-t1, "loss1 time:",t3-t2, "loss2 time:", t4-t3)
+            with torch.no_grad():
+                evaluator.reset()
+                argmax = moving_predicts[-1].argmax(dim=1)
+                # print(argmax)
+                # print(img_label2.squeeze())
+                evaluator.addBatch(argmax.long(), img_label2.squeeze().long())
+                accuracy = evaluator.getacc()
+                jaccard, class_jaccard = evaluator.getIoU()
+                # print(class_jaccard)
+                
+            acc.update(accuracy.item(), len(pos2))
+            static_iou.update(class_jaccard[1].item(), len(pos2))
+            moving_iou.update(class_jaccard[2].item(), len(pos2))
+            icp_loss.update(loss2.cpu().data, len(pos2))
+            
+            total_loss += loss.cpu().data * args.batch_size
             total_seen += args.batch_size
 
         scheduler.step()
+        
         lr = max(optimizer.param_groups[0]['lr'], args.learning_rate_clip)
         for param_group in optimizer.param_groups:
             param_group['lr'] = lr
 
         train_loss = total_loss / total_seen
-        log_print(logger,'EPOCH {} train mean loss: {:04f}'.format(epoch, float(train_loss)))
+        log_print(logger,'EPOCH {} train mean loss: {:04f} icp loss: {:04f} accuracy: {:04f} static iou: {:04f} \
+                moving iou: {:04f}'.format(epoch, float(train_loss), icp_loss.avg, float(acc.avg), static_iou.avg, moving_iou.avg))
 
         if epoch % 5 == 0:
             save_path = os.path.join(checkpoints_dir,
@@ -238,14 +249,15 @@ def main():
             }, save_path)
             log_print(logger, 'Save {}...'.format(model.__class__.__name__))
 
-            eval(model, test_dir_list, epoch)
+            eval(model, test_dir_list, epoch, logger)
             # excel_eval.update(eval_dir)
 
 
-def eval(model, test_list, epoch):
+def eval(model, test_list, epoch, logger):
     evaluator = iouEval(3, 'cuda', [0])
     acc = AverageMeter()
-    iou = AverageMeter()
+    static_iou = AverageMeter()
+    moving_iou = AverageMeter()
     for item in test_list:
         test_dataset = semantic_points_dataset(
             is_training = 0,
@@ -262,62 +274,45 @@ def eval(model, test_list, epoch):
             pin_memory=True,
             worker_init_fn=lambda x: np.random.seed((torch.initial_seed()) % (2 ** 32))
         )
-        line = 0
-        
-        total_time = 0
 
-        for batch_id, data in tqdm(enumerate(test_loader), total=len(test_loader), smoothing=0.9):
-
-            torch.cuda.synchronize()
-            start_prepare = time.time()
-            pos2, pos1, label2, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
-
-            torch.cuda.synchronize()
-
-            pos2 = [b.cuda() for b in pos2]
-            pos1 = [b.cuda() for b in pos1]
-            label2 = [b.cuda() for b in label2]
-            
-            _, img_label2 = ProjectPCimg2SphericalRing(pos2, label2, args.H_input, args.W_input)
-            
-            T_trans = T_trans.cuda().to(torch.float32)
-            T_trans_inv = T_trans_inv.cuda().to(torch.float32)
-            T_gt = T_gt.cuda().to(torch.float32)
-            
-            # 利用变换矩阵T_gt将pos1转换到pos2
-            trans_pos1 = []
-            for i, p1 in enumerate(pos1, 0):
-                padp = torch.ones(p1.shape[0]).unsqueeze(1).cuda()
-                hom_p1 = torch.cat([p1, padp], dim=1).transpose(0,1)
-                trans_pos1.append(torch.mm(T_gt[i], hom_p1).transpose(0,1)[:,:-1])
-
-            model = model.eval()
-
-            with torch.no_grad():
+        # switch to evaluate mode
+        model = model.eval()
+        evaluator.reset()
+        with torch.no_grad():
+            for batch_id, data in tqdm(enumerate(test_loader), total=len(test_loader), smoothing=0.9):
+                pos2, pos1, label2, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
+                pos2 = [b.cuda() for b in pos2]
+                pos1 = [b.cuda() for b in pos1]
+                label2 = [b.cuda() for b in label2]
                 
-                torch.cuda.synchronize()
-                start_time = time.time()
+                _, img_label2 = ProjectPCimg2SphericalRing(pos2, label2, args.H_input, args.W_input)
+                
+                T_trans = T_trans.cuda().to(torch.float32)
+                T_trans_inv = T_trans_inv.cuda().to(torch.float32)
+                T_gt = T_gt.cuda().to(torch.float32)
+                
+                # 利用变换矩阵T_gt将pos1转换到pos2,实现静态点场景流置零
+                trans_pos1 = []
+                for i, p1 in enumerate(pos1, 0):
+                    padp = torch.ones(p1.shape[0]).unsqueeze(1).cuda()
+                    hom_p1 = torch.cat([p1, padp], dim=1).transpose(0,1)
+                    trans_pos1.append(torch.mm(T_gt[i], hom_p1).transpose(0,1)[:,:-1])
 
-                output = model(pos2, trans_pos1)
-                # torch.cuda.synchronize()
-                #print('eval_one_time: ', time.time() - start_time)
-
-                torch.cuda.synchronize()
-                total_time += (time.time() - start_time)
+                # infer
+                _, output = model(pos2, trans_pos1)
                 argmax = output[-1].argmax(dim=1)
-                evaluator.reset()
-                # print(argmax.shape)
+                # print(argmax)
                 # print(img_label2.squeeze())
                 evaluator.addBatch(argmax.long(), img_label2.squeeze().long())
                 accuracy = evaluator.getacc()
                 jaccard, class_jaccard = evaluator.getIoU()
+                # print(class_jaccard)
+                acc.update(accuracy.item(), len(pos2))
+                static_iou.update(class_jaccard[1].item(), len(pos2))
+                moving_iou.update(class_jaccard[2].item(), len(pos2))
                 
-            acc.update(accuracy.item(), len(pos2))
-            iou.update(jaccard, len(pos2))
-        print("accuracy: ",acc.avg, "iou: ",iou.avg)
-        
-        avg_time = total_time / 4541
-        #print('avg_time: ', avg_time)
+            log_print(logger,'EVAL: EPOCH {} accuracy: {:04f} static iou: {:04f} \
+            moving iou: {:04f} '.format(epoch, float(acc.avg), static_iou.avg, moving_iou.avg))
 
     return 0
 
