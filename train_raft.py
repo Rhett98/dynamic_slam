@@ -18,7 +18,7 @@ from tools.logger_tools import log_print, creat_logger
 from kitti_pytorch import semantic_points_dataset
 from raft.raft import RAFT
 from utils1.collate_functions import collate_pair
-from raft.segment_losses import SegmentLoss, KDPointToPointLoss
+from raft.segment_losses import SegmentLoss, KDPointToPointLoss, knnLoss
 from translo_model_utils import ProjectPCimg2SphericalRing
 from ioueval import iouEval
 
@@ -89,7 +89,7 @@ def main():
 
     global args, dataset_config
 
-    train_dir_list = [4]#[0, 1, 2, 3, 4, 5, 6]
+    train_dir_list = [1]#[0, 1, 2, 3, 4, 5, 6]
     test_dir_list = [4]#[7, 8, 9, 10]
 
     logger = creat_logger(log_dir, args.model_name)
@@ -102,7 +102,8 @@ def main():
     # excel_eval = SaveExcel(test_dir_list, log_dir)sequence_flow_loss
     model = RAFT(args)
     loss_fn1 = SegmentLoss(dataset_config).cuda()
-    loss_fn2 = KDPointToPointLoss()
+    # loss_fn2 = knnLoss()
+    loss_fn2 = KDPointToPointLoss().cuda()
     # train set
     train_dataset = semantic_points_dataset(
         is_training = 1,
@@ -154,7 +155,7 @@ def main():
 
     else:
         init_epoch = 0
-        log_print(logger, 'Trainimage2, img_label2 = ProjectPCimg2SphericalRing(pos2, label2, args.H_input, args.W_input)ing from scratch')
+        log_print(logger, 'Training from scratch')
 
 
     # # eval once before training
@@ -205,7 +206,7 @@ def main():
             loss2 = sequence_loss(warp_image1s, image2, loss_fn2, gap=2)
             # print(loss2)
             t4 = time.time()
-            loss = loss1 + 0.3*loss2
+            loss = loss1 + 0.5*loss2.cuda()
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()

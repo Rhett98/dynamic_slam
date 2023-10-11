@@ -2,12 +2,14 @@
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
-import scipy.spatial
+from scipy.spatial import cKDTree
 try:
     from itertools import ifilterfalse
 except ImportError:
     from itertools import filterfalse as ifilterfalse
 import torch.nn.functional as F
+# from knn_cuda import KNN
+import knn
 
 def isnan(x):
     return x != x
@@ -185,21 +187,59 @@ class KDPointToPointLoss(nn.Module):
         self.lossPointMSE = torch.nn.MSELoss(reduction="none")
         
     def find_target_correspondences(self, kd_tree_target, source_list_numpy):
-        target_correspondence_indices = kd_tree_target[0].query(source_list_numpy[0])[1]
+        target_correspondence_indices = kd_tree_target[0].query(source_list_numpy)[1]
         return target_correspondence_indices
 
+    def move_zero_point(self, pc):
+        x_coords = pc[:, 0]
+        y_coords = pc[:, 1]
+        z_coords = pc[:, 2]
+
+        # 找到x、y、z坐标不全为0的点的索引
+        valid_indices = (x_coords != 0.0) | (y_coords != 0.0) | (z_coords != 0.0)
+        # 使用索引来筛选有效点
+        filtered_point_cloud = pc[valid_indices]
+        return filtered_point_cloud
+    
     def forward(self, source_point_cloud, target_point_cloud):
         # convert img to pointcloud
-        B,_, H, W = source_point_cloud.shape
-        source_point_cloud = source_point_cloud.view(B, -1, H*W)
-        target_point_cloud = target_point_cloud.view(B, -1, H*W)
-        # Build kd-tree
-        target_kd_tree = [scipy.spatial.cKDTree(target_point_cloud[0].permute(1, 0).detach().cpu().numpy())]
+        B = len(source_point_cloud)
+        loss = torch.zeros((B))
+        for batch_index in range(B):
+            batch_source_point_cloud = self.move_zero_point(source_point_cloud[batch_index].contiguous().view(-1, 3))
+            batch_target_point_cloud = self.move_zero_point(target_point_cloud[batch_index].contiguous().view(-1, 3))
+            # Build kd-tree
+            target_kd_tree = [cKDTree(batch_target_point_cloud.detach().cpu().numpy())]
+            # Find corresponding target points for all source points
+            target_correspondences_of_source_points = \
+                torch.from_numpy(self.find_target_correspondences(
+                    kd_tree_target=target_kd_tree, 
+                    source_list_numpy=batch_source_point_cloud.detach().cpu().numpy()))
+            target_points = batch_target_point_cloud[target_correspondences_of_source_points, :]
+            loss[batch_index] = self.lossMeanMSE(batch_source_point_cloud, target_points)
+        return torch.mean(loss)
 
-        # Find corresponding target points for all source points
-        target_correspondences_of_source_points = \
-            torch.from_numpy(self.find_target_correspondences(
-                kd_tree_target=target_kd_tree,
-                source_list_numpy=source_point_cloud.permute(0, 2, 1).detach().cpu().numpy()))
-        target_points = target_point_cloud[:, :, target_correspondences_of_source_points]
-        return self.lossMeanMSE(source_point_cloud, target_points)
+class knnLoss(nn.Module):
+    def __init__(self, k=3):
+        super(knnLoss, self).__init__()
+        # self.knn = knn(k, transpose_mode=False)
+        self.k = k
+        
+    def forward(self, source_pc, target_pc):
+        B, H, W, C = source_pc.shape
+        dist = 0
+        for batch_idx in range(B):
+            dist += knn.knn_loss(self.move_zero_point(target_pc[batch_idx].reshape(H*W, C)).cpu(),\
+                self.move_zero_point(source_pc[batch_idx].reshape(H*W, C)).cpu(), self.k).mean()
+        return dist/B
+    
+    def move_zero_point(self, pc):
+        x_coords = pc[:, 0]
+        y_coords = pc[:, 1]
+        z_coords = pc[:, 2]
+
+        # 找到x、y、z坐标均不为0的点的索引
+        valid_indices = (x_coords != 0.0) | (y_coords != 0.0) | (z_coords != 0.0)
+        # 使用索引来筛选有效点
+        filtered_point_cloud = pc[valid_indices]
+        return filtered_point_cloud

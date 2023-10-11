@@ -27,7 +27,7 @@
 # print("平均距离损失:", loss)
 
 import torch
-
+import time
 # Make sure your CUDA is available.
 assert torch.cuda.is_available()
 
@@ -51,8 +51,10 @@ else
 
 knn = KNN(k=5, transpose_mode=True)
 
-ref = torch.rand(2, 8000, 3).cuda()
-query = torch.rand(2, 8100, 3).cuda()
-
+ref = torch.rand(1, 15000, 3).cuda()
+query = torch.rand(1, 15100, 3).cuda()
+t1 = time.time()
 dist, indx = knn(ref, query)  # 32 x 50 x 10
-print(torch.mean(dist))
+print("spend time:", time.time()- t1)
+print(dist.shape)
+# print(indx)
