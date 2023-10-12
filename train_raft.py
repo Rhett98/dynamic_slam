@@ -102,8 +102,8 @@ def main():
     # excel_eval = SaveExcel(test_dir_list, log_dir)sequence_flow_loss
     model = RAFT(args)
     loss_fn1 = SegmentLoss(dataset_config).cuda()
-    # loss_fn2 = knnLoss()
-    loss_fn2 = KDPointToPointLoss().cuda()
+    loss_fn2 = knnLoss().cuda()
+    # loss_fn2 = KDPointToPointLoss().cuda()
     # train set
     train_dataset = semantic_points_dataset(
         is_training = 1,

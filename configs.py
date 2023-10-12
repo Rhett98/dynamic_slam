@@ -24,7 +24,7 @@ def translonet_args():
     parser.add_argument('--num_points', type=int, default=150000, help='Point Number [default: 2048]')
 
     parser.add_argument('--H_input', type=int, default=64, help='H Number [default: 64]')
-    parser.add_argument('--W_input', type=int, default=1792, help='W Number [default: 1800]')
+    parser.add_argument('--W_input', type=int, default=1536, help='W Number [default: 1800]')
 
     parser.add_argument('--max_epoch', type=int, default=351, help='Epoch to run [default: 151]')
     parser.add_argument('--weight_decay', type=int, default=0.0001, help='The Weight decay [default : 0.0001]')

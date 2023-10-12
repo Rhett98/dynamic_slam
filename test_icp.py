@@ -49,12 +49,29 @@ else
         indx is Tensor [bs x k x nq]
 """
 
-knn = KNN(k=5, transpose_mode=True)
+# knn = KNN(k=5, transpose_mode=True)
 
-ref = torch.rand(1, 15000, 3).cuda()
-query = torch.rand(1, 15100, 3).cuda()
-t1 = time.time()
-dist, indx = knn(ref, query)  # 32 x 50 x 10
-print("spend time:", time.time()- t1)
-print(dist.shape)
+# ref = torch.rand(2, 20000, 3).cuda()
+# query = torch.rand(2, 20100, 3).cuda()
+# t1 = time.time()
+# dist, indx = knn(ref, query)  # 32 x 50 x 10
+# print("spend time:", time.time()- t1)
+# print(dist.shape)
 # print(indx)
+
+def move_zero_point(pc):
+    x_coords = pc[:, 0]
+    y_coords = pc[:, 1]
+    z_coords = pc[:, 2]
+
+    # 找到x、y、z坐标均不为0的点的索引
+    valid_indices = (x_coords != 0.0) | (y_coords != 0.0) | (z_coords != 0.0)
+    # 使用索引来筛选有效点
+    filtered_point_cloud = pc[valid_indices]
+    return filtered_point_cloud
+
+if __name__ == '__main__':
+    pc1 = torch.randn((2,1000,3))
+    pc2 = torch.zeros((2,1000,3))
+    pc = torch.cat([pc1,pc2],dim=1)
+    print(move_zero_point(pc).shape)

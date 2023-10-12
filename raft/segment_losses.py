@@ -8,8 +8,8 @@ try:
 except ImportError:
     from itertools import filterfalse as ifilterfalse
 import torch.nn.functional as F
-# from knn_cuda import KNN
-import knn
+from knn_cuda import KNN
+# import knn
 
 def isnan(x):
     return x != x
@@ -222,16 +222,18 @@ class KDPointToPointLoss(nn.Module):
 class knnLoss(nn.Module):
     def __init__(self, k=3):
         super(knnLoss, self).__init__()
-        # self.knn = knn(k, transpose_mode=False)
-        self.k = k
+        self.knn = KNN(k, transpose_mode=True)
         
     def forward(self, source_pc, target_pc):
-        B, H, W, C = source_pc.shape
-        dist = 0
-        for batch_idx in range(B):
-            dist += knn.knn_loss(self.move_zero_point(target_pc[batch_idx].reshape(H*W, C)).cpu(),\
-                self.move_zero_point(source_pc[batch_idx].reshape(H*W, C)).cpu(), self.k).mean()
-        return dist/B
+        B = source_pc.shape[0]
+        loss = torch.zeros((B))
+        downsample_target_pc = self.get_downsample_pc(target_pc.permute(0, 2, 3, 1), 32, 512)
+        downsample_source_pc = self.get_downsample_pc(source_pc, 32, 512)
+        for batch_index in range(B):
+            dist, _ = self.knn(self.move_zero_point(downsample_target_pc[batch_index].contiguous().view(-1, 3)).unsqueeze(0), \
+                                self.move_zero_point(downsample_source_pc[batch_index].contiguous().view(-1, 3)).unsqueeze(0))
+            loss[batch_index] = torch.mean(dist) 
+        return torch.mean(loss)
     
     def move_zero_point(self, pc):
         x_coords = pc[:, 0]
@@ -243,3 +245,23 @@ class knnLoss(nn.Module):
         # 使用索引来筛选有效点
         filtered_point_cloud = pc[valid_indices]
         return filtered_point_cloud
+    
+    def get_downsample_pc(self, pc, out_H: int, out_W: int):
+        """According to given stride and output size, return the corresponding selected points
+        Args:
+            array (Tensor): [any array with shape (B, H, W, 3)]
+            out_H (int): [height of output array]
+            out_W (int): [width of output array]
+        Returns:
+            Tensor: (B, outh, outw, 3) 
+        """
+        batch_size, H, W, C = pc.shape
+        stride_H, stride_W = int(H/out_H), int(W/out_W)
+        select_h_idx = torch.arange(0, out_H * stride_H, stride_H)
+        select_w_idx = torch.arange(0, out_W * stride_W, stride_W)
+        height_indices = (torch.reshape(select_h_idx, (1, -1, 1))).expand(batch_size, out_H, out_W)         # b out_H out_W
+        width_indices = (torch.reshape(select_w_idx, (1, 1, -1))).expand(batch_size, out_H, out_W)            # b out_H out_W
+        padding_indices = torch.reshape(torch.arange(batch_size), (-1, 1, 1)).expand(batch_size, out_H, out_W)   # b out_H out_W
+        downsample_xyz_proj = pc[padding_indices, height_indices, width_indices, :]
+        
+        return downsample_xyz_proj
