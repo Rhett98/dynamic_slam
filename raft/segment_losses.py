@@ -235,10 +235,10 @@ class knnLoss(nn.Module):
         total_loss = torch.zeros(bsize,device='cuda')
         for batch_index in range(bsize):
             t1=time.time()
-            batch_source_pc = self.move_zero_point(source_pc[batch_index])
-            batch_target_pc = self.move_zero_point(target_pc[batch_index])
-            # batch_source_pc = source_pc[batch_index]
-            # batch_target_pc = target_pc[batch_index]
+            # batch_source_pc = self.move_zero_point(source_pc[batch_index])
+            # batch_target_pc = self.move_zero_point(target_pc[batch_index])
+            batch_source_pc = source_pc[batch_index]
+            batch_target_pc = target_pc[batch_index]
             t2=time.time()
             indxs = self.get_idxs_for_knn(batch_source_pc, batch_target_pc)
             # print(batch_target_pc.shape, batch_source_pc.shape, indxs.repeat(1,3).shape)
