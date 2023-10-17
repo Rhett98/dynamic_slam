@@ -140,7 +140,7 @@ class RAFT(nn.Module):
         moving_predicts = []
         for itr in range(iters):
             # print("-------iter: ",itr,"-----------")
-            coords1 = coords1.detach()
+            # coords1 = coords1.detach()
             corr = corr_fn(coords1) # index correlation volume
             
             # print(corr)
@@ -153,9 +153,9 @@ class RAFT(nn.Module):
             # print(delta_flow[:,1,:,:])
             # print(coords1[0,:,:,100:150])
             coords1 = coords1 + delta_flow
-
+            # print(coords1[:,0,:,:])
             # print("__________")
-            # print(delta_flow[0,:,:,100])
+            # print(coords1[:,1,:,:])
             # upsample predictions
             if up_mask is None:
                 flow_up = upflow8(coords1 - coords0)

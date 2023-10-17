@@ -13,11 +13,11 @@ def translonet_args():
     parser.add_argument('--gpu', type=int, default=0, help='GPU to use [default: GPU 3]')
     parser.add_argument('--multi_gpu', type=str, default=None, help='The gpu [default : null]')
     parser.add_argument('--limit_or_filter', type=bool, default=True, help='if False, filter will reserve 40m~50m points')
-    parser.add_argument('--batch_size', type=int, default=2, help='Batch Size during training [default: 16]')
+    parser.add_argument('--batch_size', type=int, default=4, help='Batch Size during training [default: 16]')
     parser.add_argument('--eval_batch_size', type=int, default=2, help='Batch Size during evaling [default: 64]')
     parser.add_argument('--eval_before', type=int, default=1, help='if 1, eval before train')
 
-    parser.add_argument('--lidar_root', default='/home/yu/Resp/dataset/sequences', help='Dataset directory [default: /dataset]')
+    parser.add_argument('--lidar_root', default='/home/yu/myresp/dataset/sequences', help='Dataset directory [default: /dataset]')
     parser.add_argument('--image_root', default='/dataset/data_odometry_color', help='Dataset directory [default: /dataset]')
     parser.add_argument('--log_dir', default='log_train', help='Log dir [default: log_train]')
 
@@ -26,7 +26,7 @@ def translonet_args():
     parser.add_argument('--H_input', type=int, default=64, help='H Number [default: 64]')
     parser.add_argument('--W_input', type=int, default=1536, help='W Number [default: 1800]')
 
-    parser.add_argument('--max_epoch', type=int, default=351, help='Epoch to run [default: 151]')
+    parser.add_argument('--max_epoch', type=int, default=251, help='Epoch to run [default: 151]')
     parser.add_argument('--weight_decay', type=int, default=0.0001, help='The Weight decay [default : 0.0001]')
     parser.add_argument('--workers', type=int, default=2,
                         help='Sets how many child processes can be used [default : 16]')

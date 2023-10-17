@@ -8,7 +8,7 @@ import torch.utils.data
 import numpy as np
 import time
 import yaml
-
+from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from configs import translonet_args
@@ -43,16 +43,11 @@ eval_dir = os.path.join(file_dir, 'eval')
 if not os.path.exists(eval_dir): os.makedirs(eval_dir)
 log_dir = os.path.join(file_dir, 'logs')
 if not os.path.exists(log_dir): os.makedirs(log_dir)
-checkpoints_dir = os.path.join(file_dir, 'checkpoints/translonet')
+checkpoints_dir = os.path.join(file_dir, 'checkpoints/raftseg')
 if not os.path.exists(checkpoints_dir): os.makedirs(checkpoints_dir)
 
-# os.system('cp %s %s' % ('train.py', log_dir))
-# os.system('cp %s %s' % ('configs.py', log_dir))
-# os.system('cp %s %s' % ('translo_model.py', log_dir))
-# os.system('cp %s %s' % ('conv_util.py', log_dir))
-# os.system('cp %s %s' % ('kitti_pytorch.py', log_dir))
-
 '''LOG'''
+tb_writer = SummaryWriter(log_dir)
 
 def sequence_loss(pred_list, gt, loss_fn, gamma=0.8, gap=1):
     """ Loss function defined over sequence of predictions """
@@ -87,9 +82,9 @@ class AverageMeter(object):
 
 def main():
 
-    global args, dataset_config
+    global args, dataset_config, tb_writer
 
-    train_dir_list = [1]#[0, 1, 2, 3, 4, 5, 6]
+    train_dir_list = [4]#[0, 1, 2, 3, 4, 5, 6]
     test_dir_list = [4]#[7, 8, 9, 10]
 
     logger = creat_logger(log_dir, args.model_name)
@@ -117,7 +112,7 @@ def main():
         shuffle=True,
         num_workers=args.workers,
         collate_fn=collate_pair,
-        pin_memory=True,
+        pin_memory=False,
         drop_last=True,
         worker_init_fn=lambda x: np.random.seed((torch.initial_seed()) % (2 ** 32))
     )#collate_fn=collate_pair,
@@ -171,6 +166,7 @@ def main():
         acc = AverageMeter()
         static_iou = AverageMeter()
         moving_iou = AverageMeter()
+        sematic_loss = AverageMeter()
         icp_loss = AverageMeter()
         
         optimizer.zero_grad()
@@ -184,48 +180,51 @@ def main():
             pos2 = [b.cuda() for b in pos2]
             pos1 = [b.cuda() for b in pos1]
             label2 = [b.cuda() for b in label2]
-            
+            # print(sample_id)
             image2, img_label2 = ProjectPCimg2SphericalRing(pos2, label2, args.H_input, args.W_input)
-            
-            T_trans = T_trans.cuda().to(torch.float32)
-            T_trans_inv = T_trans_inv.cuda().to(torch.float32)
+            # print(img_label2.squeeze().shape)
+            # T_trans = T_trans.cuda().to(torch.float32)
+            # T_trans_inv = T_trans_inv.cuda().to(torch.float32)
 
-            T_gt = torch.linalg.inv(T_gt.cuda().to(torch.float32))
+            T_inv = torch.linalg.inv(T_gt.cuda().to(torch.float32))
             
             # 利用变换矩阵T_gt将pos1转换到pos2
             trans_pos1 = []
             for i, p1 in enumerate(pos1, 0):
                 padp = torch.ones(p1.shape[0]).unsqueeze(1).cuda()
                 hom_p1 = torch.cat([p1, padp], dim=1).transpose(0,1)
-                trans_pos1.append(torch.mm(T_gt[i], hom_p1).transpose(0,1)[:,:-1])
+                trans_pos1.append(torch.mm(T_inv[i], hom_p1).transpose(0,1)[:,:-1])
+            
+            # forward
             t1 = time.time()
-            warp_image1s, moving_predicts = model(pos2, trans_pos1)
+            warp_image1s, moving_predicts = model(trans_pos1, pos2)
+            # movinglabel loss
             t2 = time.time()
             loss1 = sequence_loss(moving_predicts, img_label2.squeeze(), loss_fn1)
+            # knn loss
             t3 = time.time()
-            loss2 = sequence_loss(warp_image1s, image2, loss_fn2, gap=2)
-            # print(loss2)
+            loss2 = sequence_loss(warp_image1s, image2, loss_fn2, gap=1)
+            # print("movinglabel loss : ", loss1, "knn loss :", loss2)
             t4 = time.time()
-            loss = loss1 + 0.5*loss2.cuda()
+            # total loss
+            loss = loss1.cuda() + 0.5*loss2.cuda()
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            # print("infer time:", t2-t1, "loss1 time:",t3-t2, "loss2 time:", t4-t3)
+            # print("infer time:", t2-t1, "loss1 time:",t3-t2, "loss2 time:", t4-t3, "backward time:", time.time()-t4)
             with torch.no_grad():
                 evaluator.reset()
                 argmax = moving_predicts[-1].argmax(dim=1)
-                # print(argmax)
-                # print(img_label2.squeeze())
                 evaluator.addBatch(argmax.long(), img_label2.squeeze().long())
                 accuracy = evaluator.getacc()
                 jaccard, class_jaccard = evaluator.getIoU()
-                # print(class_jaccard)
                 
             acc.update(accuracy.item(), len(pos2))
             static_iou.update(class_jaccard[1].item(), len(pos2))
             moving_iou.update(class_jaccard[2].item(), len(pos2))
+            sematic_loss.update(loss1.cpu().data, len(pos2))
             icp_loss.update(loss2.cpu().data, len(pos2))
-            
+
             total_loss += loss.cpu().data * args.batch_size
             total_seen += args.batch_size
 
@@ -236,8 +235,15 @@ def main():
             param_group['lr'] = lr
 
         train_loss = total_loss / total_seen
-        log_print(logger,'EPOCH {} train mean loss: {:04f} icp loss: {:04f} accuracy: {:04f} static iou: {:04f} \
-                moving iou: {:04f}'.format(epoch, float(train_loss), icp_loss.avg, float(acc.avg), static_iou.avg, moving_iou.avg))
+        log_print(logger,'EPOCH {} train mean loss: {:04f} sematic loss: {:04f} icp loss: {:04f} accuracy: {:04f} static iou: {:04f} \
+                moving iou: {:04f}'.format(epoch, float(train_loss), sematic_loss.avg, icp_loss.avg, float(acc.avg), static_iou.avg, moving_iou.avg))
+        # write to tensorboard
+        tb_writer.add_scalar("train_loss", train_loss, epoch)
+        tb_writer.add_scalar("train_sematic_loss", sematic_loss.avg, epoch)
+        tb_writer.add_scalar("train_icp_loss", icp_loss.avg, epoch)
+        tb_writer.add_scalar("train_accuracy", acc.avg, epoch)
+        tb_writer.add_scalar("train_static_iou", static_iou.avg, epoch)
+        tb_writer.add_scalar("train_moving_iou", moving_iou.avg, epoch)
 
         if epoch % 5 == 0:
             save_path = os.path.join(checkpoints_dir,
@@ -250,11 +256,11 @@ def main():
             }, save_path)
             log_print(logger, 'Save {}...'.format(model.__class__.__name__))
 
-            eval(model, test_dir_list, epoch, logger)
+            eval(model, test_dir_list, epoch, logger, tb_writer)
             # excel_eval.update(eval_dir)
 
 
-def eval(model, test_list, epoch, logger):
+def eval(model, test_list, epoch, logger, tb_writer):
     evaluator = iouEval(3, 'cuda', [0])
     acc = AverageMeter()
     static_iou = AverageMeter()
@@ -288,19 +294,19 @@ def eval(model, test_list, epoch, logger):
                 
                 _, img_label2 = ProjectPCimg2SphericalRing(pos2, label2, args.H_input, args.W_input)
                 
-                T_trans = T_trans.cuda().to(torch.float32)
-                T_trans_inv = T_trans_inv.cuda().to(torch.float32)
-                T_gt = T_gt.cuda().to(torch.float32)
+                # T_trans = T_trans.cuda().to(torch.float32)
+                # T_trans_inv = T_trans_inv.cuda().to(torch.float32)
+                T_inv = torch.linalg.inv(T_gt.cuda().to(torch.float32))
                 
                 # 利用变换矩阵T_gt将pos1转换到pos2,实现静态点场景流置零
                 trans_pos1 = []
                 for i, p1 in enumerate(pos1, 0):
                     padp = torch.ones(p1.shape[0]).unsqueeze(1).cuda()
                     hom_p1 = torch.cat([p1, padp], dim=1).transpose(0,1)
-                    trans_pos1.append(torch.mm(T_gt[i], hom_p1).transpose(0,1)[:,:-1])
+                    trans_pos1.append(torch.mm(T_inv[i], hom_p1).transpose(0,1)[:,:-1])
 
                 # infer
-                _, output = model(pos2, trans_pos1)
+                _, output = model(trans_pos1, pos2)
                 argmax = output[-1].argmax(dim=1)
                 # print(argmax)
                 # print(img_label2.squeeze())
@@ -314,6 +320,10 @@ def eval(model, test_list, epoch, logger):
                 
             log_print(logger,'EVAL: EPOCH {} accuracy: {:04f} static iou: {:04f} \
             moving iou: {:04f} '.format(epoch, float(acc.avg), static_iou.avg, moving_iou.avg))
+            # write to tensorboard
+            tb_writer.add_scalar("eval_accuracy", acc.avg, epoch)
+            tb_writer.add_scalar("eval_static_iou", static_iou.avg, epoch)
+            tb_writer.add_scalar("eval_moving_iou", moving_iou.avg, epoch)
 
     return 0
 

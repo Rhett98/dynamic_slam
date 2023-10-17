@@ -219,32 +219,47 @@ class KDPointToPointLoss(nn.Module):
             loss[batch_index] = self.lossMeanMSE(batch_source_point_cloud, target_points)
         return torch.mean(loss)
 
+import time
+
 class knnLoss(nn.Module):
-    def __init__(self, k=3):
+    def __init__(self, k=1):
         super(knnLoss, self).__init__()
         self.knn = KNN(k, transpose_mode=True)
-        
+        self.lossPointMSE = torch.nn.MSELoss()
+
     def forward(self, source_pc, target_pc):
-        B = source_pc.shape[0]
-        loss = torch.zeros((B))
-        downsample_target_pc = self.get_downsample_pc(target_pc.permute(0, 2, 3, 1), 32, 512)
-        downsample_source_pc = self.get_downsample_pc(source_pc, 32, 512)
-        for batch_index in range(B):
-            dist, _ = self.knn(self.move_zero_point(downsample_target_pc[batch_index].contiguous().view(-1, 3)).unsqueeze(0), \
-                                self.move_zero_point(downsample_source_pc[batch_index].contiguous().view(-1, 3)).unsqueeze(0))
-            loss[batch_index] = torch.mean(dist) 
-        return torch.mean(loss)
+        # print(source_pc.shape, target_pc.require_gard)
+        bsize = source_pc.shape[0]
+        target_pc = self.get_downsample_pc(target_pc.permute(0, 2, 3, 1), 32, 512).contiguous().view(bsize, -1, 3)
+        source_pc = self.get_downsample_pc(source_pc, 32, 512).contiguous().view(bsize, -1, 3)
+        total_loss = torch.zeros(bsize,device='cuda')
+        for batch_index in range(bsize):
+            t1=time.time()
+            batch_source_pc = self.move_zero_point(source_pc[batch_index])
+            batch_target_pc = self.move_zero_point(target_pc[batch_index])
+            # batch_source_pc = source_pc[batch_index]
+            # batch_target_pc = target_pc[batch_index]
+            t2=time.time()
+            indxs = self.get_idxs_for_knn(batch_source_pc, batch_target_pc)
+            # print(batch_target_pc.shape, batch_source_pc.shape, indxs.repeat(1,3).shape)
+            nearest_source_pc = torch.gather(batch_source_pc, dim=0, index=indxs.repeat(1,3))
+            t3=time.time()
+            loss = self.lossPointMSE(nearest_source_pc.unsqueeze(0), batch_target_pc.unsqueeze(0))
+            t4=time.time()
+            total_loss[batch_index] = loss
+            # print("b_index:", batch_index, t2-t1, t3-t2, t4-t3, time.time()-t4)
+
+        # print(tt1-tt0,tt2-tt1,tt3-tt2,tt4-tt3, time.time()-tt4)
+        return torch.mean(total_loss)
+
+    
+    def get_idxs_for_knn(self, source_pc, target_pc):
+        _, indice = self.knn(source_pc.unsqueeze(0), target_pc.unsqueeze(0))
+        return indice[0]
     
     def move_zero_point(self, pc):
-        x_coords = pc[:, 0]
-        y_coords = pc[:, 1]
-        z_coords = pc[:, 2]
-
-        # 找到x、y、z坐标均不为0的点的索引
-        valid_indices = (x_coords != 0.0) | (y_coords != 0.0) | (z_coords != 0.0)
-        # 使用索引来筛选有效点
-        filtered_point_cloud = pc[valid_indices]
-        return filtered_point_cloud
+        valid_indices = (pc[:, 0] != 0.0) | (pc[:, 1] != 0.0) | (pc[:, 2] != 0.0)
+        return pc[valid_indices]
     
     def get_downsample_pc(self, pc, out_H: int, out_W: int):
         """According to given stride and output size, return the corresponding selected points
@@ -255,13 +270,16 @@ class knnLoss(nn.Module):
         Returns:
             Tensor: (B, outh, outw, 3) 
         """
+        # t1=time.time()
         batch_size, H, W, C = pc.shape
-        stride_H, stride_W = int(H/out_H), int(W/out_W)
-        select_h_idx = torch.arange(0, out_H * stride_H, stride_H)
-        select_w_idx = torch.arange(0, out_W * stride_W, stride_W)
+        stride_H, stride_W = 2, 3
+        select_h_idx = torch.arange(0, out_H * stride_H, stride_H, device='cuda')
+        select_w_idx = torch.arange(0, out_W * stride_W, stride_W, device='cuda')
+        # t2=time.time()
         height_indices = (torch.reshape(select_h_idx, (1, -1, 1))).expand(batch_size, out_H, out_W)         # b out_H out_W
         width_indices = (torch.reshape(select_w_idx, (1, 1, -1))).expand(batch_size, out_H, out_W)            # b out_H out_W
-        padding_indices = torch.reshape(torch.arange(batch_size), (-1, 1, 1)).expand(batch_size, out_H, out_W)   # b out_H out_W
+        padding_indices = torch.reshape(torch.arange(batch_size, device='cuda'), (-1, 1, 1)).expand(batch_size, out_H, out_W)   # b out_H out_W
         downsample_xyz_proj = pc[padding_indices, height_indices, width_indices, :]
-        
+        # print(t2-t1,time.time()-t2)
+        # print(downsample_xyz_proj.shape)
         return downsample_xyz_proj

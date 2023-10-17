@@ -51,28 +51,45 @@ class KDPointToPointLoss(nn.Module):
         return torch.mean(loss)
        
 class knnLoss(nn.Module):
-    def __init__(self, k=3):
+    def __init__(self, k=1):
         super(knnLoss, self).__init__()
         self.knn = KNN(k, transpose_mode=True)
-        
+        self.lossPointMSE = torch.nn.MSELoss()
+
     def forward(self, source_pc, target_pc):
-        B, _, _ = source_pc.shape
-        loss = torch.zeros((B))
-        for batch_index in range(B):
-            dist, _ = self.knn(self.move_zero_point(target_pc[batch_index]).unsqueeze(0), \
-                                self.move_zero_point(source_pc[batch_index]).unsqueeze(0))
-            loss[batch_index] = torch.mean(dist) 
-        return torch.mean(loss)
+        source_pc = self.move_zero_point(source_pc)
+        target_pc = self.move_zero_point(target_pc)
+        indxs = self.get_idx_dists_for_knn(source_pc, target_pc)
+        bsize = len(indxs)
+        total_loss = torch.zeros(bsize)
+        for batch_index in range(bsize):
+            nearest_source_pc = torch.gather(source_pc[batch_index], dim=0, index=indxs[batch_index][0].repeat(1,3))
+            loss = self.lossPointMSE(nearest_source_pc.unsqueeze(0), target_pc[batch_index].unsqueeze(0))
+            total_loss[batch_index] = loss
+        return torch.mean(total_loss)
+        
+    def get_idx_dists_for_knn(self, source_pc, target_pc):
+        bsize = len(source_pc)
+        indices = []
+        for batch_index in range(bsize):
+            _, indice = self.knn(source_pc[batch_index].unsqueeze(0), \
+                                target_pc[batch_index].unsqueeze(0))
+            indices.append(indice)
+        return indices
     
     def move_zero_point(self, pc):
-        x_coords = pc[:, 0]
-        y_coords = pc[:, 1]
-        z_coords = pc[:, 2]
+        bsize = pc.shape[0]
+        filtered_point_cloud = []
+        for batch_index in range(bsize):
+            x_coords = pc[batch_index, :, 0]
+            y_coords = pc[batch_index, :, 1]
+            z_coords = pc[batch_index, :, 2]
 
-        # 找到x、y、z坐标均不为0的点的索引
-        valid_indices = (x_coords != 0.0) | (y_coords != 0.0) | (z_coords != 0.0)
-        # 使用索引来筛选有效点
-        filtered_point_cloud = pc[valid_indices]
+            # 找到x、y、z坐标均不为0的点的索引
+            valid_indices = (x_coords != 0.0) | (y_coords != 0.0) | (z_coords != 0.0)
+            # 使用索引来筛选有效点
+            filtered_point_cloud.append(pc[batch_index, valid_indices])
+
         return filtered_point_cloud
     
 
@@ -97,6 +114,18 @@ def get_downsample_pc(pc, batch_size, out_H: int, out_W: int, stride_H: int, str
     
     return downsample_xyz_proj
 
+
+def move_zero_point(pc):
+    x_coords = pc[:, 0]
+    y_coords = pc[:, 1]
+    z_coords = pc[:, 2]
+
+    # 找到x、y、z坐标均不为0的点的索引
+    valid_indices = (x_coords != 0.0) | (y_coords != 0.0) | (z_coords != 0.0)
+    # 使用索引来筛选有效点
+    filtered_point_cloud = pc[valid_indices]
+    print(filtered_point_cloud.shape)
+    return filtered_point_cloud
     
 if __name__ == '__main__':
     
@@ -138,7 +167,7 @@ if __name__ == '__main__':
         worker_init_fn=lambda x: np.random.seed((torch.initial_seed()) % (2 ** 32))
     )
     # loss_fn = KDPointToPointLoss()
-    loss_fn = knnLoss().cuda()
+    loss_fn = knnLoss(k=1).cuda()
 
     for i, data in enumerate(train_loader, 0):
         pos2, pos1, label2, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
@@ -147,7 +176,7 @@ if __name__ == '__main__':
             break
         # print("before:", loss_fn.forward(pos2.cuda(), pos1.cuda()))
 
-        T_gt = torch.linalg.inv(T_gt.to(torch.float32)).cuda()
+        T_inv = torch.linalg.inv(T_gt.to(torch.float32)).cuda()
         # print(T_gt)
         
         # # 利用变换矩阵T_gt将pos1转换到pos2
@@ -157,12 +186,11 @@ if __name__ == '__main__':
         # print("trans after:", loss_fn.forward(pos2, trans_pos1.permute(0,2,1)))
         
         ###############################################################################
-        image1, _ = ProjectPCimg2SphericalRing(pos1.cuda(), None, 64, 1536)
-        image2, _ = ProjectPCimg2SphericalRing(pos2.cuda(), None, 64, 1536)
-        print(image1.shape)
+        image1, img1_mask = ProjectPCimg2SphericalRing(pos1.cuda(), None, 64, 1536)
+        image2, img2_mask = ProjectPCimg2SphericalRing(pos2.cuda(), None, 64, 1536)
         image1 = get_downsample_pc(image1,1,32,512,2,3)
         image2 = get_downsample_pc(image2,1,32,512,2,3)
-        # print(image1)
+        # print(img1_mask.shape)
         # print(image1_)
         flat_img1 = image1.view(1, -1, 3)
         flat_img2 = image2.view(1, -1, 3)
@@ -170,9 +198,21 @@ if __name__ == '__main__':
         print("img before:", loss_fn.forward(flat_img2, flat_img1))
         print("spend time:", time.time()- t1)
         # 利用变换矩阵T_gt将pos1转换到pos2
+        # ex_img2 = torch.zeros_like(flat_img1)
+        flat_img1 = move_zero_point(flat_img1.squeeze()).unsqueeze(0)
         padp = torch.ones([flat_img1.shape[0], flat_img1.shape[1], 1]).cuda()
         hom_p1 = torch.cat([flat_img1, padp], dim=2)
-        trans_pos1 = torch.mm(T_gt[0].float(), hom_p1[0].transpose(1,0).float())[:-1,:].unsqueeze(0)
+        trans_pos1 = torch.mm(T_inv[0].float().cuda(), hom_p1[0].transpose(1,0).float())[:-1,:].unsqueeze(0)
+        # homogeneous_points = torch.cat((flat_img1, torch.ones((flat_img1.shape[0], flat_img1.shape[1], 1), device=flat_img1.device)), dim=2)
+
+        # # 使用矩阵乘法计算变换后的坐标
+        # transformed_points = torch.matmul(homogeneous_points.float(), T_gt.permute(0, 2, 1).cuda().float())  # 注意需要转置变换矩阵
+
+        # # 从变换后的坐标中提取前三列作为三维点坐标
+        # trans_pos1 = transformed_points[:, :, :3]
+
+        # print(T_gt[0].float())
+        # print(trans_pos1.shape)
         t2 = time.time()
         print("img after:", loss_fn.forward(flat_img2, trans_pos1.transpose(2,1)))
         print("spend time:", time.time()- t2)

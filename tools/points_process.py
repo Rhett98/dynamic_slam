@@ -14,7 +14,7 @@ import numpy as np
 """
 
 
-def limited_points(points: np.float, npoints: int = 8192, fov_filter: bool = False) -> np.float:
+def limited_points(points: float, npoints: int = 8192, fov_filter: bool = False) -> float:
     """
 
     :param points: 原点云
@@ -50,7 +50,7 @@ def limited_points(points: np.float, npoints: int = 8192, fov_filter: bool = Fal
     return points[sample_idx]
 
 
-def filter_points(points: np.float, npoints: int = 8192, fov_filter=True, furthest: int = 40) -> np.float:
+def filter_points(points: float, npoints: int = 8192, fov_filter=True, furthest: int = 40) -> float:
     """
 
     :param points: 相机坐标系下的点云，np.array [n,3] or [n,4]
@@ -105,9 +105,9 @@ def filter_points(points: np.float, npoints: int = 8192, fov_filter=True, furthe
 
 def aug_matrix():
     
-    anglex = np.clip(0.01 * np.random.randn(), -0.02, 0.02).astype(np.float32) * np.pi / 4.0
-    angley = np.clip(0.01 * np.random.randn(), -0.02, 0.02).astype(np.float32) * np.pi / 4.0
-    anglez = np.clip(0.05 * np.random.randn(), -0.1, 0.1).astype(np.float32) * np.pi / 4.0
+    anglex = np.clip(0.01 * np.random.randn(), -0.02, 0.02).astype(float) * np.pi / 4.0
+    angley = np.clip(0.01 * np.random.randn(), -0.02, 0.02).astype(float) * np.pi / 4.0
+    anglez = np.clip(0.05 * np.random.randn(), -0.1, 0.1).astype(float) * np.pi / 4.0
 
     cosx = np.cos(anglex)
     cosy = np.cos(angley)
@@ -126,13 +126,13 @@ def aug_matrix():
                     [sinz, cosz, 0],
                     [0, 0, 1]])
 
-    scale = np.diag(np.random.uniform(1.00, 1.00, 3).astype(np.float32))
+    scale = np.diag(np.random.uniform(1.00, 1.00, 3).astype(float))
     R_trans = Rx.dot(Ry).dot(Rz).dot(scale.T)
     # R_trans = Rx.dot(Ry).dot(Rz)
 
-    xx = np.clip(0.5 * np.random.randn(), -1.0, 1.0).astype(np.float32)
-    yy = np.clip(0.1 * np.random.randn(), -0.2, 0.2).astype(np.float32)
-    zz = np.clip(0.05 * np.random.randn(), -0.15, 0.15).astype(np.float32)
+    xx = np.clip(0.5 * np.random.randn(), -1.0, 1.0).astype(float)
+    yy = np.clip(0.1 * np.random.randn(), -0.2, 0.2).astype(float)
+    zz = np.clip(0.05 * np.random.randn(), -0.15, 0.15).astype(float)
 
     add_xyz = np.array([[xx], [yy], [zz]])
 
