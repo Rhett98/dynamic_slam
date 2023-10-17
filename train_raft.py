@@ -155,7 +155,7 @@ def main():
     evaluator = iouEval(3, 'cuda', [0])
     # eval once before training
     if args.eval_before == 1:
-        eval(model, test_dir_list, init_epoch, logger, evaluator)
+        eval(model, test_dir_list, init_epoch, logger, tb_writer, evaluator)
         # excel_eval.update(eval_dir)
 
     for epoch in range(init_epoch + 1, args.max_epoch):
@@ -259,7 +259,6 @@ def main():
 
 
 def eval(model, test_list, epoch, logger, tb_writer, evaluator):
-    evaluator = iouEval(3, 'cuda', [0])
     acc = AverageMeter()
     static_iou = AverageMeter()
     moving_iou = AverageMeter()
