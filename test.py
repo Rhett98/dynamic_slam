@@ -34,10 +34,10 @@ class KDPointToPointLoss(nn.Module):
         B, _, _ = source_point_cloud.shape
         loss = torch.zeros((B))
         for batch_index in range(B):
-            batch_source_point_cloud = self.move_zero_point(source_point_cloud[batch_index].contiguous().view(-1, 3))
-            batch_target_point_cloud = self.move_zero_point(target_point_cloud[batch_index].contiguous().view(-1, 3))
-            # batch_source_point_cloud = source_point_cloud[batch_index].contiguous().view(-1, 3)
-            # batch_target_point_cloud = target_point_cloud[batch_index].contiguous().view(-1, 3)
+            # batch_source_point_cloud = self.move_zero_point(source_point_cloud[batch_index].contiguous().view(-1, 3))
+            # batch_target_point_cloud = self.move_zero_point(target_point_cloud[batch_index].contiguous().view(-1, 3))
+            batch_source_point_cloud = source_point_cloud[batch_index].contiguous().view(-1, 3)
+            batch_target_point_cloud = target_point_cloud[batch_index].contiguous().view(-1, 3)
             # print(batch_source_point_cloud.shape, batch_target_point_cloud.shape)
             # Build kd-tree
             target_kd_tree = [cKDTree(batch_target_point_cloud.detach().cpu().numpy())]
@@ -81,14 +81,15 @@ class knnLoss(nn.Module):
         bsize = pc.shape[0]
         filtered_point_cloud = []
         for batch_index in range(bsize):
-            x_coords = pc[batch_index, :, 0]
-            y_coords = pc[batch_index, :, 1]
-            z_coords = pc[batch_index, :, 2]
+            # x_coords = pc[batch_index, :, 0]
+            # y_coords = pc[batch_index, :, 1]
+            # z_coords = pc[batch_index, :, 2]
 
-            # 找到x、y、z坐标均不为0的点的索引
-            valid_indices = (x_coords != 0.0) | (y_coords != 0.0) | (z_coords != 0.0)
-            # 使用索引来筛选有效点
-            filtered_point_cloud.append(pc[batch_index, valid_indices])
+            # # 找到x、y、z坐标均不为0的点的索引
+            # valid_indices = (x_coords != 0.0) | (y_coords != 0.0) | (z_coords != 0.0)
+            # # 使用索引来筛选有效点
+            # filtered_point_cloud.append(pc[batch_index, valid_indices])
+            filtered_point_cloud.append(pc[batch_index])
 
         return filtered_point_cloud
     
@@ -149,7 +150,7 @@ if __name__ == '__main__':
     from configs import translonet_args
     
     args = translonet_args()
-    train_dir_list = [4]
+    train_dir_list = [1]
     
     train_dataset = semantic_points_dataset(
         is_training = 1,
@@ -167,7 +168,7 @@ if __name__ == '__main__':
         worker_init_fn=lambda x: np.random.seed((torch.initial_seed()) % (2 ** 32))
     )
     # loss_fn = KDPointToPointLoss()
-    loss_fn = knnLoss(k=1).cuda()
+    loss_fn = knnLoss(k=1)
 
     for i, data in enumerate(train_loader, 0):
         pos2, pos1, label2, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
