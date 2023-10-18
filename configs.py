@@ -14,7 +14,7 @@ def translonet_args():
     parser.add_argument('--multi_gpu', type=str, default=None, help='The gpu [default : null]')
     parser.add_argument('--limit_or_filter', type=bool, default=True, help='if False, filter will reserve 40m~50m points')
     parser.add_argument('--batch_size', type=int, default=4, help='Batch Size during training [default: 16]')
-    parser.add_argument('--eval_batch_size', type=int, default=2, help='Batch Size during evaling [default: 64]')
+    parser.add_argument('--eval_batch_size', type=int, default=4, help='Batch Size during evaling [default: 64]')
     parser.add_argument('--eval_before', type=int, default=1, help='if 1, eval before train')
 
     parser.add_argument('--lidar_root', default='/home/yu/myresp/dataset/sequences', help='Dataset directory [default: /dataset]')
@@ -36,7 +36,7 @@ def translonet_args():
     parser.add_argument('--ckpt', type=str, default=None)
     parser.add_argument('--optimizer', default='Adam', help='adam or momentum [default: adam]')
     
-    parser.add_argument('--learning_rate', type=float, default=0.001, help='Initial learning rate [default: 0.001]')
+    parser.add_argument('--learning_rate', type=float, default=0.0001, help='Initial learning rate [default: 0.001]')
     parser.add_argument('--initial_lr', type=bool, default=False, help='Initial learning rate or not [default: False]')
     parser.add_argument('--learning_rate_clip', type=float, default=1e-6, help='learning_rate_clip [default : 1e-5]')
     parser.add_argument('--lr_stepsize', type=int, default=16, help="lr_stepsize")

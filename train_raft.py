@@ -84,8 +84,8 @@ def main():
 
     global args, dataset_config, tb_writer
 
-    train_dir_list = [4]#[0, 1, 2, 3, 4, 5, 6]
-    test_dir_list = [4]#[7, 8, 9, 10]
+    train_dir_list = [1, 2]#[0, 1, 2, 3, 4, 5, 6]
+    test_dir_list = [3, 4]#[7, 8, 9, 10]
 
     logger = creat_logger(log_dir, args.model_name)
     logger.info('----------------------------------------TRAINING----------------------------------')
@@ -152,17 +152,15 @@ def main():
         init_epoch = 0
         log_print(logger, 'Training from scratch')
 
-
-    # # eval once before training
-    # if args.eval_before == 1:
-    #     eval(model, test_dir_list, init_epoch, logger)
-    #     # excel_eval.update(eval_dir)
+    evaluator = iouEval(3, 'cuda', [0])
+    # eval once before training
+    if args.eval_before == 1:
+        eval(model, test_dir_list, init_epoch, logger, tb_writer, evaluator)
+        # excel_eval.update(eval_dir)
 
     for epoch in range(init_epoch + 1, args.max_epoch):
         total_loss = 0
         total_seen = 0
-        
-        evaluator = iouEval(3, 'cuda', [0])
         acc = AverageMeter()
         static_iou = AverageMeter()
         moving_iou = AverageMeter()
@@ -236,7 +234,7 @@ def main():
 
         train_loss = total_loss / total_seen
         log_print(logger,'EPOCH {} train mean loss: {:04f} sematic loss: {:04f} icp loss: {:04f} accuracy: {:04f} static iou: {:04f} \
-                moving iou: {:04f}'.format(epoch, float(train_loss), sematic_loss.avg, icp_loss.avg, float(acc.avg), static_iou.avg, moving_iou.avg))
+        moving iou: {:04f}'.format(epoch, float(train_loss), sematic_loss.avg, icp_loss.avg, float(acc.avg), static_iou.avg, moving_iou.avg))
         # write to tensorboard
         tb_writer.add_scalar("train_loss", train_loss, epoch)
         tb_writer.add_scalar("train_sematic_loss", sematic_loss.avg, epoch)
@@ -256,12 +254,11 @@ def main():
             }, save_path)
             log_print(logger, 'Save {}...'.format(model.__class__.__name__))
 
-            eval(model, test_dir_list, epoch, logger, tb_writer)
+            eval(model, test_dir_list, epoch, logger, tb_writer, evaluator)
             # excel_eval.update(eval_dir)
 
 
-def eval(model, test_list, epoch, logger, tb_writer):
-    evaluator = iouEval(3, 'cuda', [0])
+def eval(model, test_list, epoch, logger, tb_writer, evaluator):
     acc = AverageMeter()
     static_iou = AverageMeter()
     moving_iou = AverageMeter()
@@ -281,7 +278,6 @@ def eval(model, test_list, epoch, logger, tb_writer):
             pin_memory=True,
             worker_init_fn=lambda x: np.random.seed((torch.initial_seed()) % (2 ** 32))
         )
-
         # switch to evaluate mode
         model = model.eval()
         evaluator.reset()
@@ -293,11 +289,7 @@ def eval(model, test_list, epoch, logger, tb_writer):
                 label2 = [b.cuda() for b in label2]
                 
                 _, img_label2 = ProjectPCimg2SphericalRing(pos2, label2, args.H_input, args.W_input)
-                
-                # T_trans = T_trans.cuda().to(torch.float32)
-                # T_trans_inv = T_trans_inv.cuda().to(torch.float32)
                 T_inv = torch.linalg.inv(T_gt.cuda().to(torch.float32))
-                
                 # 利用变换矩阵T_gt将pos1转换到pos2,实现静态点场景流置零
                 trans_pos1 = []
                 for i, p1 in enumerate(pos1, 0):
