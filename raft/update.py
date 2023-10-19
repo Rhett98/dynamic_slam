@@ -89,7 +89,7 @@ class SmallUpdateBlock(nn.Module):
         self.encoder = SmallMotionEncoder(args)
         self.gru = ConvGRU(hidden_dim=hidden_dim, input_dim=96+64+48)
         self.flow_head = FlowHead(hidden_dim, hidden_dim=128, out_dim=2)
-        self.classification_head = FlowHead(hidden_dim, hidden_dim=256, out_dim=3)
+        self.classification_head = FlowHead(hidden_dim, hidden_dim=128, out_dim=3)
 
     def forward(self, net, inp, corr, flow, logits):
         motion_features = self.encoder(flow, corr, logits)

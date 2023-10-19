@@ -84,8 +84,8 @@ def main():
 
     global args, dataset_config, tb_writer
 
-    train_dir_list = [1, 2]#[0, 1, 2, 3, 4, 5, 6]
-    test_dir_list = [3, 4]#[7, 8, 9, 10]
+    train_dir_list = [1]#[0, 1, 2, 3, 4, 5, 6]
+    test_dir_list = [4]#[7, 8, 9, 10]
 
     logger = creat_logger(log_dir, args.model_name)
     logger.info('----------------------------------------TRAINING----------------------------------')

@@ -146,9 +146,9 @@ class RAFT(nn.Module):
             net, up_mask, delta_flow, delta_logits = self.update_block(net, inp, corr, flow, logits)
 
             # F(t+1) = F(t) + \Delta(t)
-            coords1 += delta_flow
-            logits += delta_logits
-            logits = F.softmax(logits, dim=1)
+            coords1 = coords1 + delta_flow
+            logits = logits + delta_logits
+            # logits = F.softmax(logits, dim=1)
             if up_mask is None:
                 flow_up = upflow8(coords1 - coords0)
                 logits_up = upflow8(logits)
@@ -156,10 +156,11 @@ class RAFT(nn.Module):
                 flow_up = self.upsample_flow(coords1 - coords0, up_mask)
             
             warp_image1 = self.warp_img(image1, flow_up)
+            # print(flow_up)
             
             # add result to list
             warp_image1s.append(warp_image1)
-            moving_predicts.append(logits_up)
+            moving_predicts.append(F.softmax(logits_up, dim=1))
             
         return warp_image1s, moving_predicts
     
