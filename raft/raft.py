@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import argparse
+from torch.autograd import Variable
 
 from raft.update import BasicUpdateBlock, SmallUpdateBlock
 from raft.extractor import BasicEncoder, SmallEncoder
@@ -70,39 +71,72 @@ class RAFT(nn.Module):
         up_flow = up_flow.permute(0, 1, 4, 2, 5, 3)
         return up_flow.reshape(N, 2, 8*H, 8*W)
 
-    def warp_img(self, img, flow):
-        """ Warp img [B, 3, H, W] with flow [B, 2, H, W]"""
-            # 获取输入张量的尺寸
-        B, _, H, W = img.size()
+    # def warp_img(self, img, flow):
+    #     """ Warp img [B, 3, H, W] with flow [B, 2, H, W]"""
+    #         # 获取输入张量的尺寸
+    #     B, _, H, W = img.size()
 
-        # 创建目标张量，初始化为零
-        warped_img = torch.zeros_like(img).cuda()
+    #     # 创建目标张量，初始化为零
+    #     warped_img = torch.zeros_like(img).cuda()
 
-        # 生成采样网格
-        grid_x, grid_y = torch.meshgrid(torch.arange(H), torch.arange(W))
-        grid_x = grid_x.float().cuda()
-        grid_y = grid_y.float().cuda()
+    #     # 生成采样网格
+    #     grid_x, grid_y = torch.meshgrid(torch.arange(H), torch.arange(W))
+    #     grid_x = grid_x.float().cuda()
+    #     grid_y = grid_y.float().cuda()
 
-        # 添加光流位移
-        grid_x = grid_x.unsqueeze(0).expand(B, -1, -1).contiguous()
-        grid_y = grid_y.unsqueeze(0).expand(B, -1, -1).contiguous()
+    #     # 添加光流位移
+    #     grid_x = grid_x.unsqueeze(0).expand(B, -1, -1).contiguous()
+    #     grid_y = grid_y.unsqueeze(0).expand(B, -1, -1).contiguous()
 
-        grid_x += flow[:, 0, :, :]
-        grid_y += flow[:, 1, :, :]
+    #     grid_x += flow[:, 0, :, :]
+    #     grid_y += flow[:, 1, :, :]
 
-        # 归一化到[-1, 1]范围
-        grid_x = 2.0 * (grid_x / (H - 1)) - 1.0
-        grid_y = 2.0 * (grid_y / (W - 1)) - 1.0
+    #     # 归一化到[-1, 1]范围
+    #     grid_x = 2.0 * (grid_x / (H - 1)) - 1.0
+    #     grid_y = 2.0 * (grid_y / (W - 1)) - 1.0
 
-        # 扩展维度以匹配grid的维度
-        grid_x = grid_x.unsqueeze(3)
-        grid_y = grid_y.unsqueeze(3)
+    #     # 扩展维度以匹配grid的维度
+    #     grid_x = grid_x.unsqueeze(3)
+    #     grid_y = grid_y.unsqueeze(3)
 
-        # 使用grid_sample进行双线性采样
-        grid = torch.cat((grid_x, grid_y), dim=3)
-        warped_img = F.grid_sample(img, grid, padding_mode='border', align_corners=True)
+    #     # 使用grid_sample进行双线性采样
+    #     grid = torch.cat((grid_x, grid_y), dim=3)
+    #     warped_img = F.grid_sample(img, grid, padding_mode='border', align_corners=True)
 
-        return warped_img
+    #     return warped_img
+    def warp_img(self, x, flo):
+        """
+        warp an image/tensor (im2) back to im1, according to the optical flow
+
+        x: [B, C, H, W] (im2)
+        flo: [B, 2, H, W] flow
+
+        """
+        B, C, H, W = x.size()
+        # mesh grid 
+        xx = torch.arange(0, W).view(1,-1).repeat(H,1)
+        yy = torch.arange(0, H).view(-1,1).repeat(1,W)
+        xx = xx.view(1,1,H,W).repeat(B,1,1,1)
+        yy = yy.view(1,1,H,W).repeat(B,1,1,1)
+        grid = torch.cat((xx,yy),1).float()
+
+        if x.is_cuda:
+            grid = grid.cuda()
+        vgrid = Variable(grid) + flo
+
+        # scale grid to [-1,1] 
+        vgrid[:,0,:,:] = 2.0*vgrid[:,0,:,:].clone() / max(W-1,1)-1.0
+        vgrid[:,1,:,:] = 2.0*vgrid[:,1,:,:].clone() / max(H-1,1)-1.0
+
+        vgrid = vgrid.permute(0,2,3,1)        
+        output = nn.functional.grid_sample(x, vgrid)
+        mask = torch.autograd.Variable(torch.ones(x.size())).cuda()
+        mask = nn.functional.grid_sample(mask, vgrid)
+        
+        mask[mask<0.999] = 0
+        mask[mask>0] = 1
+        
+        return output*mask
 
     def forward(self, pc1, pc2, iters=6, flow_init=None):
         """ Estimate optical flow between pair of frames """
@@ -146,8 +180,8 @@ class RAFT(nn.Module):
             net, up_mask, delta_flow, delta_logits = self.update_block(net, inp, corr, flow, logits)
 
             # F(t+1) = F(t) + \Delta(t)
-            coords1 += delta_flow
-            logits += delta_logits
+            coords1 = coords1 + delta_flow
+            logits = logits + delta_logits
             logits = F.softmax(logits, dim=1)
             if up_mask is None:
                 flow_up = upflow8(coords1 - coords0)
