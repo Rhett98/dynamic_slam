@@ -193,7 +193,7 @@ def main():
             warp_image1s, moving_predicts = model(trans_pos1, pos2)
             # movinglabel loss
             t2 = time.time()
-            print(img_label2.squeeze().shape)
+            # print(img_label2.squeeze().shape)
             loss1 = sequence_loss(moving_predicts, img_label2.squeeze(), loss_fn1)
             # knn loss
             t3 = time.time()
@@ -255,9 +255,11 @@ def main():
 
 
 def eval(model, test_list, epoch, logger, tb_writer, evaluator):
+    global args
     acc = AverageMeter()
     static_iou = AverageMeter()
     moving_iou = AverageMeter()
+    bev_proj_fn = PillarLayer(args.voxel_size,args.point_cloud_range,args.max_num_points,args.max_voxels)
     for item in test_list:
         test_dataset = semantic_points_dataset(
             is_training = 0,
@@ -277,6 +279,7 @@ def eval(model, test_list, epoch, logger, tb_writer, evaluator):
         # switch to evaluate mode
         model = model.eval()
         evaluator.reset()
+        
         with torch.no_grad():
             for batch_id, data in tqdm(enumerate(test_loader), total=len(test_loader), smoothing=0.9):
                 pos2, pos1, label2, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
@@ -284,7 +287,7 @@ def eval(model, test_list, epoch, logger, tb_writer, evaluator):
                 pos1 = [b.cuda() for b in pos1]
                 label2 = [b.cuda() for b in label2]
                 
-                _, img_label2 = ProjectPCimg2SphericalRing(pos2, label2, args.H_input, args.W_input)
+                _, _, _, img2, img_label2 = bev_proj_fn(pos2, label2)
                 T_inv = torch.linalg.inv(T_gt.cuda().to(torch.float32))
                 # 利用变换矩阵T_gt将pos1转换到pos2,实现静态点场景流置零
                 trans_pos1 = []
