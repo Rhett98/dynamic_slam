@@ -209,7 +209,7 @@ class SmallEncoder(nn.Module):
         elif self.norm_fn == 'none':
             self.norm1 = nn.Sequential()
 
-        self.conv1 = nn.Conv2d(3, 32, kernel_size=7, stride=2, padding=3)
+        self.conv1 = nn.Conv2d(32, 32, kernel_size=7, stride=2, padding=3)
         self.relu1 = nn.ReLU(inplace=True)
 
         self.in_planes = 32

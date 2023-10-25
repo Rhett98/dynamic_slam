@@ -1,0 +1,4 @@
+# ninja log v5
+0	18575	1698030266012581117	/home/yu/Resp/dynamic_slam/ops_pytorch/voxelization/build/temp.linux-x86_64-cpython-38/voxelization_cpu.o	4e03cb68827a68f8
+0	18855	1698030266304580999	/home/yu/Resp/dynamic_slam/ops_pytorch/voxelization/build/temp.linux-x86_64-cpython-38/voxelization.o	f8dc6d0b368dddf1
+0	28733	1698030276156577228	/home/yu/Resp/dynamic_slam/ops_pytorch/voxelization/build/temp.linux-x86_64-cpython-38/voxelization_cuda.o	b67bbc249b74ca74

@@ -230,8 +230,8 @@ class knnLoss(nn.Module):
     def forward(self, source_pc, target_pc):
         # print(source_pc.shape, target_pc.require_gard)
         bsize = source_pc.shape[0]
-        target_pc = self.get_downsample_pc(target_pc.permute(0, 2, 3, 1), 32, 512).contiguous().view(bsize, -1, 3)
-        source_pc = self.get_downsample_pc(source_pc, 32, 512).contiguous().view(bsize, -1, 3)
+        target_pc = self.get_downsample_pc(target_pc.permute(0,2,3,1), 100, 100).contiguous().view(bsize, -1, 3)
+        source_pc = self.get_downsample_pc(source_pc.permute(0,2,3,1), 100, 100).contiguous().view(bsize, -1, 3)
         total_loss = torch.zeros(bsize,device='cuda')
         for batch_index in range(bsize):
             t1=time.time()
@@ -272,7 +272,7 @@ class knnLoss(nn.Module):
         """
         # t1=time.time()
         batch_size, H, W, C = pc.shape
-        stride_H, stride_W = 2, 3
+        stride_H, stride_W = 4, 4
         select_h_idx = torch.arange(0, out_H * stride_H, stride_H, device='cuda')
         select_w_idx = torch.arange(0, out_W * stride_W, stride_W, device='cuda')
         # t2=time.time()
