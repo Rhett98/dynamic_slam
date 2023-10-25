@@ -227,11 +227,11 @@ class knnLoss(nn.Module):
         self.knn = KNN(k, transpose_mode=True)
         self.lossPointMSE = torch.nn.MSELoss()
 
-    def forward(self, source_pc, target_pc):
+    def forward(self, target_pc, source_pc):
         # print(source_pc.shape, target_pc.require_gard)
         bsize = source_pc.shape[0]
-        target_pc = self.get_downsample_pc(target_pc.permute(0, 2, 3, 1), 32, 512).contiguous().view(bsize, -1, 3)
-        source_pc = self.get_downsample_pc(source_pc, 32, 512).contiguous().view(bsize, -1, 3)
+        target_pc = self.get_downsample_pc(target_pc, 32, 512).contiguous().view(bsize, -1, 3)
+        source_pc = self.get_downsample_pc(source_pc.permute(0, 2, 3, 1), 32, 512).contiguous().view(bsize, -1, 3)
         total_loss = torch.zeros(bsize,device='cuda')
         for batch_index in range(bsize):
             t1=time.time()
@@ -250,6 +250,7 @@ class knnLoss(nn.Module):
             # print("b_index:", batch_index, t2-t1, t3-t2, t4-t3, time.time()-t4)
 
         # print(tt1-tt0,tt2-tt1,tt3-tt2,tt4-tt3, time.time()-tt4)
+        # print(total_loss)
         return torch.mean(total_loss)
 
     

@@ -129,9 +129,9 @@ class RAFT(nn.Module):
         vgrid[:,1,:,:] = 2.0*vgrid[:,1,:,:].clone() / max(H-1,1)-1.0
 
         vgrid = vgrid.permute(0,2,3,1)        
-        output = nn.functional.grid_sample(x, vgrid)
+        output = nn.functional.grid_sample(x, vgrid, align_corners=True)
         mask = torch.autograd.Variable(torch.ones(x.size())).cuda()
-        mask = nn.functional.grid_sample(mask, vgrid)
+        mask = nn.functional.grid_sample(mask, vgrid, align_corners=True)
         
         mask[mask<0.999] = 0
         mask[mask>0] = 1
@@ -167,7 +167,7 @@ class RAFT(nn.Module):
         
         if flow_init is not None:
             coords1 = coords1 + flow_init
-
+        # print(coords1.permute(0, 2, 3, 1))
         warp_image1s = []
         moving_predicts = []
         for itr in range(iters):
@@ -175,12 +175,13 @@ class RAFT(nn.Module):
             coords1 = coords1.detach()
             logits = logits.detach()
             corr = corr_fn(coords1) # index correlation volume
-
+            # print(corr.shape)
             flow = coords1 - coords0
             net, up_mask, delta_flow, delta_logits = self.update_block(net, inp, corr, flow, logits)
 
             # F(t+1) = F(t) + \Delta(t)
             coords1 = coords1 + delta_flow
+            # print(coords1.permute(0, 2, 3, 1))
             logits = logits + delta_logits
             # logits = F.softmax(logits, dim=1)
             if up_mask is None:
@@ -191,7 +192,7 @@ class RAFT(nn.Module):
             
             warp_image1 = self.warp_img(image1, flow_up)
             # print(flow_up)
-            
+            # print(warp_image1.permute(0, 2, 3, 1))
             # add result to list
             warp_image1s.append(warp_image1)
             moving_predicts.append(F.softmax(logits_up, dim=1))

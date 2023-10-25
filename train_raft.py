@@ -18,7 +18,7 @@ from tools.logger_tools import log_print, creat_logger
 from kitti_pytorch import semantic_points_dataset
 from raft.raft import RAFT
 from utils1.collate_functions import collate_pair
-from raft.segment_losses import SegmentLoss, KDPointToPointLoss, knnLoss
+from raft.segment_losses import SegmentLoss, KDPointToPointLoss, knnLoss, Lovasz_softmax
 from translo_model_utils import ProjectPCimg2SphericalRing
 from ioueval import iouEval
 
@@ -59,6 +59,7 @@ def sequence_loss(pred_list, gt, loss_fn, gamma=0.8, gap=1):
         i_weight = gamma**(n_predictions - i - 1)
         loss = loss_fn(gt, pred_list[i])
         seq_loss += i_weight * (loss)
+        # print(i," ", loss)
 
     return seq_loss
 
@@ -184,26 +185,22 @@ def main():
             # T_trans = T_trans.cuda().to(torch.float32)
             # T_trans_inv = T_trans_inv.cuda().to(torch.float32)
 
-            T_inv = torch.linalg.inv(T_gt.cuda().to(torch.float32))
+            # T_inv = torch.linalg.inv(T_gt.cuda().to(torch.float32))
             
-            # 利用变换矩阵T_gt将pos1转换到pos2
-            trans_pos1 = []
-            for i, p1 in enumerate(pos1, 0):
-                padp = torch.ones(p1.shape[0]).unsqueeze(1).cuda()
-                hom_p1 = torch.cat([p1, padp], dim=1).transpose(0,1)
-                trans_pos1.append(torch.mm(T_inv[i], hom_p1).transpose(0,1)[:,:-1])
+            # # 利用变换矩阵T_gt将pos1转换到pos2
+            # trans_pos1 = []
+            # for i, p1 in enumerate(pos1, 0):
+            #     padp = torch.ones(p1.shape[0]).unsqueeze(1).cuda()
+            #     hom_p1 = torch.cat([p1, padp], dim=1).transpose(0,1)
+            #     trans_pos1.append(torch.mm(T_inv[i], hom_p1).transpose(0,1)[:,:-1])
             
             # forward
-            t1 = time.time()
-            warp_image1s, moving_predicts = model(trans_pos1, pos2)
+            warp_image1s, moving_predicts = model(pos1, pos2)
             # movinglabel loss
-            t2 = time.time()
             loss1 = sequence_loss(moving_predicts, img_label2.squeeze(), loss_fn1)
             # knn loss
-            t3 = time.time()
             loss2 = sequence_loss(warp_image1s, image2, loss_fn2, gap=1)
-            # print("movinglabel loss : ", loss1, "knn loss :", loss2)
-            t4 = time.time()
+            # print("movinglabel loss : ", loss1, "knln loss :", loss2)
             # total loss
             loss = loss1.cuda() + 0.5*loss2.cuda()
             optimizer.zero_grad()
@@ -259,10 +256,11 @@ def main():
 
 
 def eval(model, test_list, epoch, logger, tb_writer, evaluator):
-    acc = AverageMeter()
-    static_iou = AverageMeter()
-    moving_iou = AverageMeter()
+    # loss_ls = Lovasz_softmax(ignore=0).to('cuda')
     for item in test_list:
+        acc = AverageMeter()
+        static_iou = AverageMeter()
+        moving_iou = AverageMeter()
         test_dataset = semantic_points_dataset(
             is_training = 0,
             num_point = args.num_points,
@@ -275,7 +273,7 @@ def eval(model, test_list, epoch, logger, tb_writer, evaluator):
             shuffle=False,
             num_workers=args.workers,
             collate_fn=collate_pair,
-            pin_memory=True,
+            pin_memory=False,
             worker_init_fn=lambda x: np.random.seed((torch.initial_seed()) % (2 ** 32))
         )
         # switch to evaluate mode
@@ -289,19 +287,21 @@ def eval(model, test_list, epoch, logger, tb_writer, evaluator):
                 label2 = [b.cuda() for b in label2]
                 
                 _, img_label2 = ProjectPCimg2SphericalRing(pos2, label2, args.H_input, args.W_input)
-                T_inv = torch.linalg.inv(T_gt.cuda().to(torch.float32))
-                # 利用变换矩阵T_gt将pos1转换到pos2,实现静态点场景流置零
-                trans_pos1 = []
-                for i, p1 in enumerate(pos1, 0):
-                    padp = torch.ones(p1.shape[0]).unsqueeze(1).cuda()
-                    hom_p1 = torch.cat([p1, padp], dim=1).transpose(0,1)
-                    trans_pos1.append(torch.mm(T_inv[i], hom_p1).transpose(0,1)[:,:-1])
+                # T_inv = torch.linalg.inv(T_gt.cuda().to(torch.float32))
+                # # 利用变换矩阵T_gt将pos1转换到pos2,实现静态点场景流置零
+                # trans_pos1 = []
+                # for i, p1 in enumerate(pos1, 0):
+                #     padp = torch.ones(p1.shape[0]).unsqueeze(1).cuda()
+                #     hom_p1 = torch.cat([p1, padp], dim=1).transpose(0,1)
+                #     trans_pos1.append(torch.mm(T_inv[i], hom_p1).transpose(0,1)[:,:-1])
 
                 # infer
-                _, output = model(trans_pos1, pos2)
+                _, output = model(pos1, pos2)
                 argmax = output[-1].argmax(dim=1)
-                # print(argmax)
+                # print(output)
                 # print(img_label2.squeeze())
+                # jacc = loss_ls( output[-1], img_label2.squeeze().long())
+                # print(jacc)
                 evaluator.addBatch(argmax.long(), img_label2.squeeze().long())
                 accuracy = evaluator.getacc()
                 jaccard, class_jaccard = evaluator.getIoU()
@@ -310,8 +310,8 @@ def eval(model, test_list, epoch, logger, tb_writer, evaluator):
                 static_iou.update(class_jaccard[1].item(), len(pos2))
                 moving_iou.update(class_jaccard[2].item(), len(pos2))
                 
-            log_print(logger,'EVAL: EPOCH {} accuracy: {:04f} static iou: {:04f} \
-            moving iou: {:04f} '.format(epoch, float(acc.avg), static_iou.avg, moving_iou.avg))
+            log_print(logger,'EVAL: EPOCH {} Seq: {} accuracy: {:04f} static iou: {:04f} \
+            moving iou: {:04f} '.format(epoch, item, float(acc.avg), static_iou.avg, moving_iou.avg))
             # write to tensorboard
             tb_writer.add_scalar("eval_accuracy", acc.avg, epoch)
             tb_writer.add_scalar("eval_static_iou", static_iou.avg, epoch)
