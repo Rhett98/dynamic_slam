@@ -106,8 +106,8 @@ def pillar_raftnet_args():
     parser.add_argument('--momentum', type=float, default=0.9, help='Initial learning rate [default: 0.9]')
     parser.add_argument('--is_training', type=bool, default=True, help='is_training [default : True]')
     # pillar parameter
-    parser.add_argument('--voxel_size', type=float, default=[0.16, 0.16, 3], help=' [default: 0.9]')
-    parser.add_argument('--point_cloud_range', type=float, default=[-32, -32, -1, 32, 32, 2], help=' [default: 0.9]')
+    parser.add_argument('--voxel_size', type=float, default=[0.2, 0.2, 9], help=' [default: 0.9]')
+    parser.add_argument('--point_cloud_range', type=float, default=[-40, -40, -3, 40, 40, 6], help=' [default: 0.9]')
     parser.add_argument('--max_num_points', type=float, default=5, help=' [default: 0.9]')
     parser.add_argument('--max_voxels', type=float, default=(16000, 40000), help=' [default: 0.9]')
     
