@@ -209,13 +209,19 @@ def compute_distance_matrix(dets, tracks):
             dist_matrix[i, j] = p2p_distance(det, trk)
     return dist_matrix
 
+def compute_traj_distance_matrix(trajs, tracks):
+    dist_matrix = np.empty((len(trajs), len(tracks)))
+    for i, det in enumerate(trajs):
+        for j, trk in enumerate(tracks):
+            dist_matrix[i, j] = p2l_distance(det, trk)
+    return dist_matrix
+
 class association():
     def __init__(self):
         self.count = 0
         self.traj = dict()
         self.history_point = list()
-        
-        
+         
     def update(self, tracks):
         # tracks: [Pa,Pb,...]
         num_obj = len(tracks)
@@ -225,9 +231,9 @@ class association():
                 self.traj[i] = [tracks[i]]
         else:
             # 
-            dis_matrix = compute_distance_matrix(self.history_point.pop(),tracks)
-            print(dis_matrix)
-        print("traj: ", self.traj)
+            dis_matrix = compute_distance_matrix(self.history_point.pop(), tracks)
+            traj_dis_matrix = compute_traj_distance_matrix(self.traj, tracks)
+
         self.history_point.append(tracks) #todo:用stack 存储
         self.count += 1
 
@@ -354,6 +360,7 @@ if __name__ == '__main__':
 #             plot(centroids[0], centroids[1], color=col[i], marker='*')
 #         title('test')
 #         axis('on')
+#         plt.ioff()
 #         show()
         
     
