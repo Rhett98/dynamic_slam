@@ -10,7 +10,7 @@ import time
 
 from tqdm import tqdm
 
-from configs import translonet_args
+from configs import odometry__args
 from tools.excel_tools import SaveExcel
 from tools.euler_tools import quat2mat
 from tools.logger_tools import log_print, creat_logger
@@ -21,7 +21,7 @@ from utils1.collate_functions import collate_pair
 
 
 
-args = translonet_args()
+args = odometry__args()
 
 '''CREATE DIR'''
 base_dir = os.path.dirname(os.path.abspath(__file__))

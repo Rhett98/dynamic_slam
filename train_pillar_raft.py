@@ -11,7 +11,7 @@ import yaml
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from configs import pillar_raftnet_args
+from configs import dynamic_seg_args
 from tools.logger_tools import log_print, creat_logger
 from kitti_pytorch import semantic_points_dataset
 from raft.pillar_raft import RAFT
@@ -23,7 +23,7 @@ from pointpillar_encoder import PillarLayer
 f = open('dataset_config.yaml')
 dataset_config = yaml.load(f, Loader=yaml.FullLoader)
 
-args = pillar_raftnet_args()
+args = dynamic_seg_args()
 
 '''CREATE DIR'''
 base_dir = os.path.dirname(os.path.abspath(__file__))
