@@ -2,14 +2,14 @@
 
 import sys,os,copy,math
 import numpy as np
-
+import gtsam
 
 """
      Reading data from KITTI tracking
 
 """
 
-seq_length = [154,443,233,144,314,297,270,800,390,803,294,373,78,340,106,376,209,145,339,1059,837]
+seq_length = [153,442,232,143,313,298,271,799,389,802,293,372,77,339,105,375,208,144,338,1058,836]
 
 object_type_to_idx = {'Car': 0,
                       'Van' : 1,
@@ -101,6 +101,7 @@ class tData:
         self.ignored    = False
         self.valid      = False
         self.tracker    = -1
+        self.T          = -1
 
     def __str__(self):
         """
@@ -118,8 +119,8 @@ class tracking_dataset(object):
         self.pose_path = os.path.join(dataset_path, "pose",self.sequence_index,"pose.txt")
         self.calib_path = os.path.join(dataset_path, "calib")
         self.seq_length = seq_length[seq_index]
-        self._load_label(cls)
         self._load_pose()
+        self._load_label(cls)
         
         self.mean = [0.485, 0.456, 0.406]
         self.std = [0.229, 0.224, 0.225]
@@ -127,17 +128,18 @@ class tracking_dataset(object):
     def _load_pose(self):
         # load poses
         poses = np.array(load_poses(self.pose_path))
-        inv_frame0 = np.linalg.inv(poses[0])
+        self.inv_frame0 = np.linalg.inv(poses[0])
 
         # load calibrations
         T_cam_velo = load_calib(os.path.join(self.calib_path, "%s.txt" % self.sequence_index))
-        T_cam_velo = np.asarray(T_cam_velo).reshape((4, 4))
-        T_velo_cam = np.linalg.inv(T_cam_velo)
+        self.T_cam_velo = np.asarray(T_cam_velo).reshape((4, 4))
+        self.T_velo_cam = np.linalg.inv(self.T_cam_velo)
 
         # convert kitti poses from camera coord to LiDAR coord
         new_poses = []
         for pose in poses:
-            new_poses.append(T_velo_cam.dot(inv_frame0).dot(pose).dot(T_cam_velo))
+            # new_poses.append(self.T_velo_cam.dot(self.inv_frame0).dot(pose).dot(self.T_cam_velo))
+            new_poses.append(self.inv_frame0.dot(pose))
         self.poses = np.array(new_poses)
 
     def _load_label(self, cls="car"):
@@ -186,7 +188,7 @@ class tracking_dataset(object):
             t_data.Y            = float(fields[14])         # Y [m]
             t_data.Z            = float(fields[15])         # Z [m]
             t_data.yaw          = float(fields[16])         # yaw angle [rad]
-
+            t_data.T = self.T_velo_cam.dot(np.array(gtsam.Pose3(gtsam.Rot3.RzRyRx(0, 0, t_data.yaw), gtsam.Point3(t_data.X, t_data.Y, t_data.Z)).matrix())).dot(self.T_cam_velo)
             # do not consider objects marked as invalid
             if t_data.track_id == -1 and t_data.obj_type == "dontcare":
                 continue
@@ -226,15 +228,80 @@ class tracking_dataset(object):
         pc = point[:, :3].astype(np.float32)
         return  pc
                 
-                
+def plot_2d_points_proj(fignum, values, label,title="Global Traj"):
+    keys = values.keys()
+    fig = plt.figure(fignum)
+    # Plot points and covariance matrices
+    x, y = [],[]
+    for key in keys:
+        point = values.atPoint3(key)
+        x.append(point[0])
+        y.append(point[1])
+    plt.plot(x, y, label=label)
+    plt.legend(loc = 'upper right')
+    # plt.axis([-70, 70, -20, 20])
+    fig.suptitle(title)
+
+        
 if __name__ == '__main__': 
-    import gtsam
     import gtsam.utils.plot as gtsam_plot
     import matplotlib.pyplot as plt
     seq_index = 0
     dataset = tracking_dataset("/home/yu/Resp/dataset/data_tracking_velodyne/training",seq_index)
+    obj_traj = dict()
+    fig = plt.figure(0)
+    if not fig.axes:
+        axes = fig.add_subplot(projection='3d')
+    else:
+        axes = fig.axes[0]
+    plt.cla()
+    plt.xlabel('x')
+    plt.ylabel('y')
+    
+    # plot ego pose
+    ego_value = gtsam.Values()
+    for i in range(seq_length[seq_index]):
+        ego_pose = gtsam.Pose3(dataset.get_pose(i))
+        ego_value.insert(i,ego_pose.translation())
+    # plot_2d_points_proj(0, ego_value,'ego')
+    gtsam_plot.plot_trajectory(0,ego_value)
+        
+    # plot obj global_pose
     for i in range(seq_length[seq_index]):
         ego_pose = gtsam.Pose3(dataset.get_pose(i))
         for obj_data in dataset.get_label(i):
-            obj_pose = gtsam.Pose3(gtsam.Rot3.RzRyRx(0, 0, obj_data.yaw), gtsam.Point3(obj_data.X, obj_data.Y, obj_data.Z))
-            print(obj_pose)
+            obj_pose = gtsam.Pose3(obj_data.T)
+            global_obj_pose = ego_pose * obj_pose
+            if obj_data.track_id in obj_traj.keys():
+                obj_traj[obj_data.track_id].append(global_obj_pose)
+            else:
+                obj_traj[obj_data.track_id] = [global_obj_pose]
+    
+    obj_value = gtsam.Values()   
+    for id, traj in obj_traj.items():
+        obj_value.clear()
+        flag = 0 
+        cl = np.random.random(), np.random.random(), np.random.random()
+        for t in traj:
+            obj_value.insert(flag, t.translation())
+            flag+=1
+        # plot_2d_points_proj(0, obj_value, id)
+        # gtsam_plot.plot_3d_points(0, obj_value)
+
+
+    # for i in range(seq_length[seq_index]):
+    #     ego_pose = gtsam.Pose3(dataset.get_pose(i))
+    #     last_obj_pose = gtsam.Pose3(np.eye(4))
+    #     for obj_data in dataset.get_label(i):
+    #         obj_pose = gtsam.Pose3(obj_data.T)
+    #         global_obj_pose = ego_pose * obj_pose
+    #         global_obj_pose = last_obj_pose.inverse() * obj_pose
+    #         if obj_data.track_id in obj_traj.keys():
+    #             obj_traj[obj_data.track_id].append(global_obj_pose)
+    #         else:
+    #             obj_traj[obj_data.track_id] = [global_obj_pose]
+    #         last_obj_pose = ego_pose * obj_pose
+            
+    plt.axis('equal')
+    plt.ioff()
+    plt.show()

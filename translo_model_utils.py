@@ -276,10 +276,8 @@ def PreProcess(PC_f1, PC_f2, T_gt, T_trans, T_trans_inv, aug_frame):    ####    
         cur_T_trans = T_trans[i, :, :].to(torch.float32)
         cur_T_trans_inv = T_trans_inv[i, :, :].to(torch.float32)
 
-
         cur_PC_f1_concat = PC_f1_concat[i]
         cur_PC_f2_concat = PC_f2_concat[i]
-
 
         ##  select the 30m * 30m region ########
 
