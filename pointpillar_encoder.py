@@ -4,7 +4,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from tools.voxel_module import Voxelization
-
+import numpy as np
+import matplotlib.pyplot as plt
 
 class PillarLayer(nn.Module):
     def __init__(self, voxel_size, point_cloud_range, max_num_points, max_voxels):
@@ -21,13 +22,13 @@ class PillarLayer(nn.Module):
         '''
         batched_pts: list[tensor], len(batched_pts) = bs
         return: 
-               pillars: (p1 + p2 + ... + pb, num_points, c), 
-               coors_batch: (p1 + p2 + ... + pb, 1 + 3), 
+               pillars: (p1 + p2 + ... + pb, num_points, c), True
                num_points_per_pillar: (p1 + p2 + ... + pb, ), (b: batch size)
         '''
         pillars, coors, npoints_per_pillar = [], [], []
         for i, pts in enumerate(batched_pts):
             if batch_labels is not None:
+                # print(pts.shape,batch_labels[i].unsqueeze(1).shape)
                 voxels_out, coors_out, num_points_per_voxel_out = self.voxel_layer(torch.cat([pts,batch_labels[i]],dim=1).contiguous())
                 # voxels_out: (max_voxel, num_points, c+1) 
             else:
@@ -48,7 +49,6 @@ class PillarLayer(nn.Module):
         center_pt = torch.sum(pillars[:, :, :3], dim=1, keepdim=True) / npoints_per_pillar[:, None, None] # (p1 + p2 + ... + pb, 1, 3)
         batched_pillar_center = []
         if batch_labels is not None:
-            # print("pillars:", pillars.shape)
             pillar_label = pillars[:, :, 3]
             pillar_label_max,_ = torch.mode(pillar_label.int(), dim=1)
             batched_pillar_label = []
@@ -137,32 +137,230 @@ class PillarEncoder(nn.Module):
         # batch stack
         batched_pillar_feature = torch.stack(batched_pillar_feature, dim=0) # (bs, in_channel, self.y_l, self.x_l)
         return batched_pillar_feature
-
     
 
-if __name__ == '__main__':
-    voxel_size=[0.16, 0.16, 3]
-    point_cloud_range=[-32, -32, -1, 32, 32, 2]
-    max_num_points=5
-    max_voxels=(16000, 40000)
-    batch_pts = []
-    batch_labels = []
-    pc1 = np.fromfile("demo_pc/velodyne/000000.bin", dtype=np.float32).reshape(-1,4)
-    pc1 = torch.from_numpy(pc1[:,:4].astype(np.float32)).float()
-    pc2 = np.fromfile("demo_pc/velodyne/000001.bin", dtype=np.float32).reshape(-1,4)
-    pc2 = torch.from_numpy(pc2[:,:4].astype(np.float32)).float()
-    label1 = np.fromfile("demo_pc/labels/000000.label", dtype=np.int32).reshape((-1))& 0xFFFF
-    label1 = torch.from_numpy(label1.astype(np.float32)).float()
-    label2 = np.fromfile("demo_pc/labels/000001.label", dtype=np.int32).reshape((-1))& 0xFFFF
-    label2 = torch.from_numpy(label2.astype(np.float32)).float()
-    batch_pts.append(pc1)
-    batch_labels.append(label1)
-    batch_labels.append(label2)
-    batch_pts.append(pc2)
-    layer = PillarLayer(voxel_size,point_cloud_range,max_num_points,max_voxels)
-    de = PillarEncoder(voxel_size,point_cloud_range,9,64)
-    pillars, coors_batch, npoints_per_pillar, pillar_center, pillar_label= layer(batch_pts, batch_labels)
-    print(pillars.shape, coors_batch.shape, npoints_per_pillar.shape)
-    feature = de(pillars, coors_batch, npoints_per_pillar)
-    print(feature.shape, pillar_center.shape, pillar_label.shape)
+def map(label, mapdict):
+        # put label from original values to xentropy
+        # or vice-versa, depending on dictionary values
+        # make learning map a lookup table
+        maxkey = 0
+        for key, data in mapdict.items():
+            if isinstance(data, list):
+                nel = len(data)
+            else:            # for i in range(pillar_label_max.shape[0]):
+            #     print(pillar_label_max[i])
+                nel = 1
+            if key > maxkey:
+                maxkey = key
+        # +100 hack making lut bigger just in case there are unknown labels
+        if nel > 1:
+            lut = np.zeros((maxkey + 100, nel), dtype=np.int32)
+        else:
+            lut = np.zeros((maxkey + 100), dtype=np.int32)
+        for key, data in mapdict.items():
+            try:
+                lut[key] = data
+            except IndexError:
+                print("Wrong key ", key)
+        # do the mapping
+        return lut[label]
+
+
+def get_moving_point(pc, label):
+    moving_index = torch.where(label == 2) 
+    moving_pc = pc[:,:,moving_index[2], moving_index[3]]
+    return moving_pc
+
+def vis_label(input_tensor):
+    """tensor:(1,H,W)"""
+    _,h,w = input_tensor.shape
+    output_tensor = torch.zeros((3,h,w))
+    non_label_index = torch.where(input_tensor == 0) 
+
+    static_index = torch.where(input_tensor == 1)  
+    moving_index = torch.where(input_tensor == 2)  
+    # 使用索引tensor将对应的RGB颜色数值赋值给输出tensor  
+    # white
+    output_tensor[0,:,:].index_put_(non_label_index[1:], torch.tensor([1.0])) 
+    output_tensor[1,:,:].index_put_(non_label_index[1:], torch.tensor([1.0])) 
+    output_tensor[2,:,:].index_put_(non_label_index[1:], torch.tensor([1.0]))  
+    # white
+    output_tensor[0,:,:].index_put_(static_index[1:], torch.tensor([1.0])) 
+    output_tensor[1,:,:].index_put_(static_index[1:], torch.tensor([1.0])) 
+    output_tensor[2,:,:].index_put_(static_index[1:], torch.tensor([1.0]))   
+    # red
+    output_tensor[0,:,:].index_put_(moving_index[1:], torch.tensor([1.0]))
+
+    img = np.transpose(output_tensor, (1,2,0))# [H, W, C]
+    plt.imshow(img)
+    plt.pause(0.1)
+
+
+def p2p_distance(p1, p2):
+    return np.sqrt(np.sum(np.square(p1 - p2)))
+
+def p2l_distance(p1, p2):
+    return np.sqrt(np.sum(np.square(p1 - p2)))
+
+def compute_distance_matrix(dets, tracks):
+    dist_matrix = np.empty((len(dets), len(tracks)))
+    for i, det in enumerate(dets):
+        for j, trk in enumerate(tracks):
+            dist_matrix[i, j] = p2p_distance(det, trk)
+    return dist_matrix
+
+def compute_traj_distance_matrix(trajs, tracks):
+    dist_matrix = np.empty((len(trajs), len(tracks)))
+    for i, det in enumerate(trajs):
+        for j, trk in enumerate(tracks):
+            dist_matrix[i, j] = p2l_distance(det, trk)
+    return dist_matrix
+
+class association():
+    def __init__(self):
+        self.count = 0
+        self.traj = dict()
+        self.history_point = list()
+         
+    def update(self, tracks):
+        # tracks: [Pa,Pb,...]
+        num_obj = len(tracks)
+        # init traj
+        if self.count == 0:
+            for i in range(num_obj):
+                self.traj[i] = [tracks[i]]
+        else:
+            # 
+            dis_matrix = compute_distance_matrix(self.history_point.pop(), tracks)
+            traj_dis_matrix = compute_traj_distance_matrix(self.traj, tracks)
+
+        self.history_point.append(tracks) #todo:用stack 存储
+        self.count += 1
+
+
+if __name__ == '__main__':          
+    p1 = np.array([1,0,0])
+    p2 = np.array([0,1,0])
+    det1 = [p1,p2]
+    p12 = np.array([2,0,0])
+    p22 = np.array([0,2,0])
+    det2 = [p12,p22]
+    p13 = np.array([3,0,0])
+    p23 = np.array([0,3,0])
+    det3 = [p13,p23]
+    ac = association()
+    ac.update(det1)
+    ac.update(det2)
+    # ac.update(det3)
+
+# if __name__ == '__main__':
+#     import yaml
+#     import open3d as o3d
+#     from utils1.collate_functions import collate_pair
+#     voxel_size=[0.2, 0.2, 9]
+#     point_cloud_range=[-40, -40, -3, 40, 40, 6]#[-48,-48,-3,48,48,6]
+#     max_num_points=4
+#     max_voxels=(16000, 40000)
+#     # batch_pts = []
+#     # batch_labels = []
+#     # dataset_config = yaml.load(open('dataset_config.yaml'), Loader=yaml.FullLoader)
+#     # learning_map = dataset_config["learning_map"]
+#     # pc1 = np.fromfile("demo_pc/velodyne/000000.bin", dtype=np.float32).reshape(-1,4)
+#     # pc1 = torch.from_numpy(pc1[:,:4].astype(np.float32)).float()
+#     # pc2 = np.fromfile("demo_pc/velodyne/000001.bin", dtype=np.float32).reshape(-1,4)
+#     # pc2 = torch.from_numpy(pc2[:,:4].astype(np.float32)).float()
+    
+#     # label1 = np.fromfile("demo_pc/labels/000000.label", dtype=np.int32).reshape((-1))& 0xFFFF
+#     # label2 = np.fromfile("demo_pc/labels/000001.label", dtype=np.int32).reshape((-1))& 0xFFFF
+#     # label1 = map(label1, learning_map).reshape(-1, 1)
+#     # label2 = map(label2, learning_map).reshape(-1, 1)
+#     # label1 = torch.from_numpy(label1.astype(np.float32)).float()
+#     # label2 = torch.from_numpy(label2.astype(np.float32)).float()
+    
+#     # batch_pts.append(pc1)
+#     # batch_labels.append(label1)
+#     # batch_labels.append(label2)
+#     # batch_pts.append(pc2)
+#     layer = PillarLayer(voxel_size,point_cloud_range,max_num_points,max_voxels)
+#     de = PillarEncoder(voxel_size,point_cloud_range,9,64)
+#     # pillars, coors_batch, npoints_per_pillar, pillar_center, pillar_label= layer(batch_pts, batch_labels)
+#     # print(pillars.shape, coors_batch.shape, npoints_per_pillar.shape)
+#     # feature = de(pillars, coors_batch, npoints_per_pillar)
+#     # print(feature.shape)
+#     # print(pillar_center.permute(0,2,3,1))   
+#     # print(pillar_label.permute(0,2,3,1)) 
+#     # print(pillar_center.shape, pillar_label.shape)  
+#     # vis_label(pillar_label[1])
+    
+    
+#     from kitti_pytorch import semantic_points_dataset
+#     from configs import pillar_raftnet_args
+#     from pylab import *
+#     from scipy.cluster.vq import *
+    
+#     args = pillar_raftnet_args()
+#     train_dir_list = [1]
+    
+#     train_dataset = semantic_points_dataset(
+#         is_training = 1,
+#         num_point=args.num_points,
+#         data_dir_list=train_dir_list,
+#         config=args
+#     )
+#     train_loader = torch.utils.data.DataLoader(
+#         train_dataset,
+#         batch_size=1,
+#         shuffle=False,
+#         num_workers=args.workers,
+#         collate_fn=collate_pair,
+#         pin_memory=True,
+#         drop_last=True,
+#         worker_init_fn=lambda x: np.random.seed((torch.initial_seed()) % (2 ** 32))
+#     )
+
+#     for i, data in enumerate(train_loader, 0):
+#         pos2, pos1, label2, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
+#         _,_,_, pillar_center, pillar_label= layer(pos2, label2)
+#         # print(pillar_center.shape, pillar_label.shape)  
+#         # vis_label(pillar_label[0])
+#         moving_pc = get_moving_point(pillar_center,pillar_label)
+#         print("moving pc shape: ", moving_pc[0].shape)
+#         if moving_pc.shape[2]==0:
+#             continue
+#         pointcloud = np.transpose(moving_pc[0].numpy(),(1,0))
+        
+#         features = pointcloud
+#         pcd = o3d.geometry.PointCloud()
+#         pcd.points = o3d.utility.Vector3dVector(pointcloud)
+#         # o3d.visualization.draw_geometries([point_cloud_o3d])
+#         print(pcd)
+#         # print(pcd.compute_mahalanobis_distance())
+
+#         print("->正在DBSCAN聚类...")
+#         eps = 1           # 同一聚类中最大点间距
+#         min_points = 10     # 有效聚类的最小点数
+#         labels = np.array(pcd.cluster_dbscan(eps, min_points))
+#         # print(labels)
+#         max_label = labels.max()    # 获取聚类标签的最大值 [-1,0,1,2,...,max_label]，label = -1 为噪声，因此总聚类个数为 max_label + 1
+#         print(f"point cloud has {max_label + 1} clusters")
+#         colors = plt.get_cmap("tab20")(labels / (max_label if max_label > 0 else 1))
+#         colors[labels < 0] = 0  # labels = -1 的簇为噪声，以黑色显示
+#         pcd.colors = o3d.utility.Vector3dVector(colors[:, :3])
+        
+#         # print(labels)
+#         figure()
+#         xlim((-35, 35))
+#         ylim((-35, 35))
+#         col = ('b','g','r','c','m','y','k','w')
+#         for i in range(max_label+1):
+#             ndx = where(labels == i)[0]
+#             plot(features[ndx, 0], features[ndx, 1], color=col[i], marker='o')
+#             centroids = np.sum(features[ndx],axis=0)/len(ndx)
+#             print("centroids: ",centroids)
+#             plot(centroids[0], centroids[1], color=col[i], marker='*')
+#         title('test')
+#         axis('on')
+#         plt.ioff()
+#         show()
+        
     
