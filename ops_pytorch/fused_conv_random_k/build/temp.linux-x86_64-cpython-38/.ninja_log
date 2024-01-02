@@ -1,0 +1,3 @@
+# ninja log v5
+0	17929	1704185483937772218	/home/yu/Resp/dynamic_slam/ops_pytorch/fused_conv_random_k/build/temp.linux-x86_64-cpython-38/fused_conv_g.o	c338eaec3c20ecf4
+1	47709	1704185513727770512	/home/yu/Resp/dynamic_slam/ops_pytorch/fused_conv_random_k/build/temp.linux-x86_64-cpython-38/fused_conv_go.o	132c3967a98ea697
