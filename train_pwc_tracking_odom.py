@@ -44,8 +44,8 @@ def main():
 
     global args
 
-    train_dir_list = [0, 2, 3, 4, 5, 6, 7, 9, 10]#[0, 2, 3, 4, 5, 6, 7, 9, 10]
-    test_dir_list = [0, 8, 9, 10]#[7, 8, 9, 10]
+    train_dir_list = [4,7,8,9,15,18,19]#[0, 2, 3, 4, 5, 6, 7, 9, 10]
+    test_dir_list = [4,7,8,9,15,18,19]#[7, 8, 9, 10]
 
     logger = creat_logger(log_dir, args.model_name)
     logger.info('----------------------------------------TRAINING----------------------------------')

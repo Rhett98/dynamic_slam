@@ -112,11 +112,12 @@ class tData:
 
 
 class tracking_dataset(object):
-    def __init__(self, dataset_path, seq_index, cls="car"):
+    def __init__(self, dataset_path, seq_index, pose_path, cls="car"):
         self.sequence_index = "{:0>4d}".format(seq_index)
         self.lidar_path = os.path.join(dataset_path, "velodyne",self.sequence_index)
         self.gt_path = os.path.join(dataset_path, "label_02")
-        self.pose_path = os.path.join(dataset_path, "pose",self.sequence_index,"pose.txt")
+        # self.pose_path = os.path.join(dataset_path, "pose",self.sequence_index,"pose.txt")
+        self.pose_path = os.path.join(pose_path, "logs", "{:0>2d}".format(seq_index)+"_pred.txt")
         self.calib_path = os.path.join(dataset_path, "calib")
         self.seq_length = seq_length[seq_index]
         self._load_pose()
@@ -196,7 +197,7 @@ class tracking_dataset(object):
             idx = t_data.frame
             # check if length for frame data is sufficient
             if idx >= len(f_data):
-                print("extend f_data", idx, len(f_data))
+                # print("extend f_data", idx, len(f_data))
                 f_data += [[] for x in range(max(500, idx-len(f_data)))]
             try:
                 id_frame = (t_data.frame,t_data.track_id)
@@ -237,71 +238,114 @@ def plot_2d_points_proj(fignum, values, label,title="Global Traj"):
         point = values.atPoint3(key)
         x.append(point[0])
         y.append(point[1])
-    plt.plot(x, y, label=label)
+    plt.plot(x, y, label=label)#marker='o',
     plt.legend(loc = 'upper right')
     # plt.axis([-70, 70, -20, 20])
     fig.suptitle(title)
 
+def plot_1d_value(fignum, values, label,title="Global Traj"):
+    keys = values.keys()
+    fig = plt.figure(fignum)
+    # Plot points and covariance matrices
+    x, y = [],[]
+    for key in keys:
+        point = values.atDouble(key)
+        x.append(key)
+        y.append(point)
+    plt.plot(x, y, label=label)#marker='o',
+    plt.legend(loc = 'upper right')
+    # plt.axis([-70, 70, -20, 20])
+    fig.suptitle(title)
         
 if __name__ == '__main__': 
     import gtsam.utils.plot as gtsam_plot
     import matplotlib.pyplot as plt
-    seq_index = 0
+    seq_index = 11
     dataset = tracking_dataset("/home/yu/Resp/dataset/data_tracking_velodyne/training",seq_index)
-    obj_traj = dict()
-    fig = plt.figure(0)
-    if not fig.axes:
-        axes = fig.add_subplot(projection='3d')
-    else:
-        axes = fig.axes[0]
-    plt.cla()
-    plt.xlabel('x')
-    plt.ylabel('y')
     
-    # plot ego pose
-    ego_value = gtsam.Values()
-    for i in range(seq_length[seq_index]):
-        ego_pose = gtsam.Pose3(dataset.get_pose(i))
-        ego_value.insert(i,ego_pose.translation())
-    # plot_2d_points_proj(0, ego_value,'ego')
-    gtsam_plot.plot_trajectory(0,ego_value)
-        
-    # plot obj global_pose
-    for i in range(seq_length[seq_index]):
-        ego_pose = gtsam.Pose3(dataset.get_pose(i))
-        for obj_data in dataset.get_label(i):
-            obj_pose = gtsam.Pose3(obj_data.T)
-            global_obj_pose = ego_pose * obj_pose
-            if obj_data.track_id in obj_traj.keys():
-                obj_traj[obj_data.track_id].append(global_obj_pose)
-            else:
-                obj_traj[obj_data.track_id] = [global_obj_pose]
+    # 点云可视化
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111, projection='3d')
+    # points = dataset.get_pc(0)
+    # point_range = range(0, points.shape[0])
+    # ax.scatter(points[point_range, 0],   # x
+    #         points[point_range, 1],   # y
+    #         points[point_range, 2],   # z
+    #         c=points[point_range, 2], # height data for color
+    #         marker=".")
+    # ax.axis('scaled')  # {equal, scaled}
+    # plt.show()
     
-    obj_value = gtsam.Values()   
-    for id, traj in obj_traj.items():
-        obj_value.clear()
-        flag = 0 
-        cl = np.random.random(), np.random.random(), np.random.random()
-        for t in traj:
-            obj_value.insert(flag, t.translation())
-            flag+=1
-        # plot_2d_points_proj(0, obj_value, id)
-        # gtsam_plot.plot_3d_points(0, obj_value)
-
-
+    # fig = plt.figure(0)
+    # if not fig.axes:
+    #     axes = fig.add_subplot(projection='3d')
+    # else:
+    #     axes = fig.axes[0]
+    # plt.cla()
+    # plt.xlabel('x')
+    # plt.ylabel('y')
+    
+    # # plot ego pose
+    # ego_value = gtsam.Values()
     # for i in range(seq_length[seq_index]):
     #     ego_pose = gtsam.Pose3(dataset.get_pose(i))
-    #     last_obj_pose = gtsam.Pose3(np.eye(4))
+    #     ego_value.insert(i,ego_pose)
+    # # plot_2d_points_proj(0, ego_value,'ego')
+    # gtsam_plot.plot_trajectory(0,ego_value)
+        
+    # # plot obj global_pose
+    # obj_traj = dict()
+    # obj_speed = dict()
+    # for i in range(seq_length[seq_index]):
+    #     ego_pose = gtsam.Pose3(dataset.get_pose(i))
     #     for obj_data in dataset.get_label(i):
     #         obj_pose = gtsam.Pose3(obj_data.T)
     #         global_obj_pose = ego_pose * obj_pose
-    #         global_obj_pose = last_obj_pose.inverse() * obj_pose
     #         if obj_data.track_id in obj_traj.keys():
     #             obj_traj[obj_data.track_id].append(global_obj_pose)
+    #             obj_speed[obj_data.track_id].append(obj_traj[obj_data.track_id][-2].range(global_obj_pose)*10)
     #         else:
     #             obj_traj[obj_data.track_id] = [global_obj_pose]
-    #         last_obj_pose = ego_pose * obj_pose
+    #             obj_speed[obj_data.track_id] = [0]
+
+    # obj_value = gtsam.Values()   
+    # for id, traj in obj_traj.items():
+    #     obj_value.clear()
+    #     flag = 0 
+    #     cl = np.random.random(), np.random.random(), np.random.random()
+    #     for t in traj:
+    #         obj_value.insert(flag, t.translation())
+    #         flag+=1
+    #     # plot_2d_points_proj(0, obj_value, id)
+    #     # if id==63:
+    #     #     plot_2d_points_proj(0, obj_value, id)
+    #     # gtsam_plot.plot_3d_points(0, obj_value)
+        
+    # obj_speed_value = gtsam.Values()   
+    # for id, traj in obj_speed.items():
+    #     obj_speed_value.clear()
+    #     flag = 0 
+    #     cl = np.random.random(), np.random.random(), np.random.random()
+    #     for t in traj:
+    #         obj_speed_value.insert(flag, t)
+    #         flag+=1
+    #     # plot_1d_value(0, obj_speed_value, id)
+    #     # if id==3:
+    #     #     plot_1d_value(0, obj_speed_value, id)
+
+    # # for i in range(seq_length[seq_index]):
+    # #     ego_pose = gtsam.Pose3(dataset.get_pose(i))
+    # #     last_obj_pose = gtsam.Pose3(np.eye(4))
+    # #     for obj_data in dataset.get_label(i):
+    # #         obj_pose = gtsam.Pose3(obj_data.T)
+    # #         global_obj_pose = ego_pose * obj_pose
+    # #         global_obj_pose = last_obj_pose.inverse() * obj_pose
+    # #         if obj_data.track_id in obj_traj.keys():
+    # #             obj_traj[obj_data.track_id].append(global_obj_pose)
+    # #         else:
+    # #             obj_traj[obj_data.track_id] = [global_obj_pose]
+    # #         last_obj_pose = ego_pose * obj_pose
             
-    plt.axis('equal')
-    plt.ioff()
-    plt.show()
+    # plt.axis('equal')
+    # plt.ioff()
+    # plt.show()

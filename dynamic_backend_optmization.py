@@ -46,29 +46,16 @@ def Btw3Factor(poseKey1, poseKey2, poseKey3, noise_model):
 
 class backend_optimization():
     def __init__(self):
-        self.graph = gtsam.NonlinearFactorGraph()
-        self.initial_estimate = gtsam.Values()
-        self.result = gtsam.Values()
-        self.parameters = gtsam.ISAM2Params()
-        self.parameters.setRelinearizeThreshold(0.1)
-        self.parameters.relinearizeSkip = 1
-        self.isam2 = gtsam.ISAM2(self.parameters)
-        # 因子序号
-        self.f_id = 0
-        # 帧序号
-        self.frame_index = 0
-        # 里程计因子序号
-        self.odom_id = [0]
-        self.obj_ids = dict()
-        self.pose_change_ids = dict()
-        self.ego_pose = list()
-        self.obj_traj = dict()
+        self.graph_init()
+        self.noise_init()
+        self.odom_prior_init()
         
+    def noise_init(self):
         # 设置噪声
-        egoP_egoP = 1e-3
-        egoP_objP = 1e-6
-        objP_objP_chgP = 1e-2
-        chgP_chgP = 1e-1
+        egoP_egoP = 1e-4
+        egoP_objP = 1e-2
+        objP_objP_chgP = 1.0
+        chgP_chgP = 0.1
         self.prior_noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([1e-6,1e-6,
                                                         1e-6,1e-6,
                                                         1e-6,1e-6]))
@@ -84,18 +71,41 @@ class backend_optimization():
         self.smoothing_noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([chgP_chgP,chgP_chgP,
                                                         chgP_chgP,chgP_chgP,
                                                         chgP_chgP,chgP_chgP]))
+    
+    def graph_init(self):
+        self.graph = gtsam.NonlinearFactorGraph()
+        self.initial_estimate = gtsam.Values()
+        self.result = gtsam.Values()
+        self.parameters = gtsam.ISAM2Params()
+        self.parameters.setRelinearizeThreshold(0.1)
+        self.parameters.relinearizeSkip = 1
+        self.isam2 = gtsam.ISAM2(self.parameters)
+        # 因子序号
+        self.f_id = 0
+        # 帧序号
+        self.frame_index = 0
+        # 里程计因子序号
+        self.odom_id = [0]
+        self.obj_ids = {}
+        self.pose_change_ids = {}
+        self.ego_pose = []
+        self.obj_traj = {}
         
+    def add_keyframe(self):
+        a=0
+    
+    def odom_prior_init(self):
+        self.ego_pose.append(gtsam.Pose3(np.eye(4)))
+        self.graph.add(gtsam.PriorFactorPose3(self.f_id, self.ego_pose[-1], self.prior_noise))
+        self.initial_estimate.insert(self.f_id, self.ego_pose[-1])
+        self.f_id+=1
+    
     def add_odom_factor(self):
-        if self.f_id != 0:
-            # 里程计运动因子
-            self.graph.add(gtsam.BetweenFactorPose3(self.odom_id[-1], self.f_id, self.ego_pose[-2].inverse()*self.ego_pose[-1], self.odom_noise))
-            # 里程计位姿
-            self.initial_estimate.insert(self.f_id, self.ego_pose[-1])
-            self.odom_id.append(self.f_id)
-        else:
-            # 里程计先验因子
-            self.graph.add(gtsam.PriorFactorPose3(self.f_id, self.ego_pose[-1], self.prior_noise))
-            self.initial_estimate.insert(self.f_id, self.ego_pose[-1])
+        # 里程计运动因子
+        self.graph.add(gtsam.BetweenFactorPose3(self.odom_id[-1], self.f_id, self.ego_pose[-2].inverse()*self.ego_pose[-1], self.odom_noise))
+        # 里程计位姿
+        self.initial_estimate.insert(self.f_id, self.ego_pose[-1])
+        self.odom_id.append(self.f_id)
         self.f_id+=1
         
     def add_dyobj_factor(self, new_obj, history_obj):
@@ -142,6 +152,7 @@ class backend_optimization():
         return new_obj, history_obj
 
     def update_frame_message(self, ego_pose, dyobj_data):
+        print(self.frame_index)
         # 更新当前帧里程计位姿
         self.ego_pose.append(ego_pose)
         # 加载当前帧数据
@@ -161,12 +172,12 @@ class backend_optimization():
         return current_estimate
 
 
-
 if __name__ == '__main__':
     import os
+    eval_list = [4,7,8,9,15,18,19]
     local_graph = backend_optimization() 
-    seq_index = 0
-    dataset = tracking_dataset("/home/yu/Resp/dataset/data_tracking_velodyne/training",seq_index)
+    seq_index = 18
+    dataset = tracking_dataset("/home/yu/Resp/dataset/data_tracking_velodyne/training",seq_index,"experiment/odometry_EVAL_KITTI_2024-01-11_17-21")
     fig = plt.figure(0)
     if not fig.axes:
         axes = fig.add_subplot(projection='3d')
@@ -176,8 +187,7 @@ if __name__ == '__main__':
     
     ######### 原始obj轨迹 ########
     origin_obj_traj = dict()
-    # for frame in range(seq_length[seq_index]):
-    for frame in range(154):
+    for frame in range(seq_length[seq_index]):
         frame_ego_pose = gtsam.Pose3(dataset.get_pose(frame))
         frame_obj_data = dataset.get_label(frame)
         current_estimate = local_graph.update_frame_message(frame_ego_pose, frame_obj_data)
@@ -212,7 +222,7 @@ if __name__ == '__main__':
     #         f+=1
     #     gtsam_plot.plot_3d_points(0, obj_traj_value,'r+')
        
-    ######## 优化后的里程计轨迹 ########
+    ######## 得到优化后的里程计轨迹 ########
     plot_value = gtsam.Values()
     i=0
     for v in local_graph.odom_id:
@@ -226,38 +236,34 @@ if __name__ == '__main__':
             T_current = T_current.reshape(1, 1, 12)
             T = np.append(T, T_current, axis=0)
         i+=1
-    gtsam_plot.plot_trajectory(0,plot_value)
+    # gtsam_plot.plot_trajectory(0,plot_value)
     
     ####### 保存优化后的里程计轨迹到txt #########
     T_list = T.reshape(-1, 12)
-    fname_txt = os.path.join('00_optimazation.txt')
+    fname_txt = os.path.join('test_data/'+str(seq_index)+'_optimazation.txt')
     np.savetxt(fname_txt, T_list)
     
-    ####### 原始里程计轨迹 ########
+    ####### 绘制原始里程计轨迹 ########
     origin_odom_value = gtsam.Values()
     f = 0
     for vv in local_graph.ego_pose:
         origin_odom_value.insert(f, vv)
         f+=1
-    gtsam_plot.plot_trajectory(0, origin_odom_value,5)
+    # gtsam_plot.plot_trajectory(0, origin_odom_value,5)
+    
+    ### 绘制动态目标的速度(帧间运动距离) ###
+    obj_speed_value = {}
+    f = 0
+    for i in local_graph.pose_change_ids.keys():
+        for vv in local_graph.pose_change_ids[i]:
+            if f in obj_speed_value.keys():
+                obj_speed_value[f].append(current_estimate.atPose3(vv).range(gtsam.Pose3(np.eye(4))))
+            else:
+                obj_speed_value[f] = [current_estimate.atPose3(vv).range(gtsam.Pose3(np.eye(4)))]
+        f+=1
+    # print(obj_speed_value)
     
     
-    
-    # print(current_estimate)
-    # print("ego pose: ",len(local_graph.ego_pose))
-    # print(local_graph.ego_pose)
-    # print("frame_index: ",local_graph.frame_index)
-    # print(len(local_graph.odom_id))
-    # print("obj_ids:", len(local_graph.obj_ids))
-    # n=0
-    # for i in local_graph.obj_ids.keys():
-    #     n+=len(local_graph.obj_ids[i])
-    #     print(n)
-    # print("pose_change_ids:", len(local_graph.pose_change_ids))
-    # n=0
-    # for i in local_graph.pose_change_ids.keys():
-    #     n+=len(local_graph.pose_change_ids[i])
-    #     print(n)
-    plt.axis('equal')
-    plt.ioff()
-    plt.show()
+    # plt.axis('equal')
+    # plt.ioff()
+    # plt.show()

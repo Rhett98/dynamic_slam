@@ -42,12 +42,11 @@ def main():
 
     global args
 
-    eval_list = [0]#[0, 1, 2, 3, 4, 5, 6]
+    eval_list = [4,7,8,9,15,18,19]#[4,7,8,9,15,18,19]
 
     logger = creat_logger(log_dir, args.model_name)
     logger.info('----------------------------------------TRAINING----------------------------------')
     logger.info('PARAMETER ...')
-    logger.info(args)
 
     os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
@@ -150,8 +149,9 @@ def main():
                     filler = np.array([0.0, 0.0, 0.0, 1.0])
                     filler = np.expand_dims(filler, axis=0)  ##1*4
                     TT = np.concatenate([np.concatenate([RR, tt], axis=-1), filler], axis=0)
-                    TT = np.matmul(cur_Tr, TT)
-                    TT = np.matmul(TT, np.linalg.inv(cur_Tr))
+                    
+                    # TT = np.matmul(cur_Tr, TT)
+                    # TT = np.matmul(TT, np.linalg.inv(cur_Tr))
 
                     if line == 0:
                         T_final = TT

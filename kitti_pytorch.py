@@ -136,12 +136,14 @@ class points_dataset(data.Dataset):
         filler = np.array([0.0, 0.0, 0.0, 1.0])
         filler = np.expand_dims(filler, axis=0)  #1*4
         T_diff_add = np.concatenate([T_diff, filler], axis=0)  # 4*4
-
+        
 
         Tr = self.Tr_list[index_index]
         Tr_inv = np.linalg.inv(Tr)
         T_gt = np.matmul(Tr_inv, T_diff_add)
         T_gt = np.matmul(T_gt, Tr)
+        print("before multi Tr:",T_diff_add)
+        print("after multi Tr:",T_gt)
 
         if self.is_training:
             T_trans = aug_matrix()
@@ -269,7 +271,6 @@ class semantic_points_dataset(data.Dataset):
         filler = np.expand_dims(filler, axis=0)  #1*4
         T_diff_add = np.concatenate([T_diff, filler], axis=0)  # 4*4
 
-
         Tr = self.Tr_list[index_index]
         Tr_inv = np.linalg.inv(Tr)
         T_gt = np.matmul(Tr_inv, T_diff_add)
@@ -350,7 +351,7 @@ class tracking_dataset(data.Dataset):
 
         with open('./tools/calib_tracking.yaml', "r") as f:
             con = yaml.load(f, Loader=yaml.FullLoader)
-        for i in range(11):
+        for i in range(21):
             vel_to_cam_Tr.append(np.array(con['Tr{}'.format(i)]))
         for i in self.data_list:
             data_sum.append(data_sum[-1] + self.data_len_sequence[i] + 1)
@@ -409,13 +410,14 @@ class tracking_dataset(data.Dataset):
         point2 = np.fromfile(fn2_dir, dtype=np.float32).reshape(-1, 4)
 
         T_t1 = pose[fn1, :].reshape(4, 4)
-        T_t = pose[fn2, :].reshape(4, 4)
-        T_diff = np.matmul(np.linalg.inv(T_t1),T_t)
+        T_t2 = pose[fn2, :].reshape(4, 4)
+        T_diff = np.matmul(np.linalg.inv(T_t1),T_t2)
         Tr = self.Tr_list[index_index]
         Tr_inv = np.linalg.inv(Tr)
-        T_gt = np.matmul(Tr_inv, T_diff)
-        T_gt = np.matmul(T_gt, Tr)
-
+        # T_gt = np.matmul(Tr, T_diff)
+        # T_gt = np.matmul(T_gt, Tr_inv)
+        T_gt = T_diff
+        
         if self.is_training:
             T_trans = aug_matrix()
         else:
@@ -433,7 +435,7 @@ class tracking_dataset(data.Dataset):
         for i, num in enumerate(mylist):
             if num > value:
                 return i - 1, mylist[i - 1], num
-
+            
 
 if __name__ == '__main__':
     import argparse
@@ -441,6 +443,7 @@ if __name__ == '__main__':
     from configs import dynamic_seg_args, odometry_tracking_args
     global args
     args = odometry_tracking_args()
+    args = dynamic_seg_args()
     
     train_dir_list = [1]
     train_dataset = tracking_dataset(
@@ -460,7 +463,7 @@ if __name__ == '__main__':
     )
     for i, data in enumerate(train_dataset):
         p2, p1, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
-        print(T_gt)
+        # print(T_gt)
         # print(p1)
         # ca, cb, cc = 0, 0, 0
         # for i in l2:
