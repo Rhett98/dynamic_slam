@@ -59,6 +59,47 @@ class SepConvGRU(nn.Module):
 
         return h
 
+# class SmallMotionEncoder(nn.Module):
+#     def __init__(self, args):
+#         super(SmallMotionEncoder, self).__init__()
+#         cor_planes = args.corr_levels * (2*args.corr_radius + 1)**2
+#         self.convc1 = nn.Conv2d(cor_planes, 96, 1, padding=0)
+#         self.convf1 = nn.Conv2d(2, 64, 7, padding=3)
+#         self.convf2 = nn.Conv2d(64, 32, 3, padding=1)
+#         self.conv_class1 = nn.Conv2d(3, 64, 7, padding=3)
+#         self.conv_class2 = nn.Conv2d(64, 32, 3, padding=1)
+#         self.conv = nn.Conv2d(96+32+32, 80, 3, padding=1)
+
+#     def forward(self, flow, corr, logits):
+#         corr = F.relu(self.convc1(corr))
+  
+#         flow = F.relu(self.convf1(flow))
+#         flow = F.relu(self.convf2(flow))
+
+#         logits = F.relu(self.conv_class1(logits))
+#         logits = F.relu(self.conv_class2(logits))
+
+#         concat_values = torch.cat([corr, flow, logits], dim=1)
+#         out = F.relu(self.conv(concat_values))
+#         return torch.cat([out, flow, logits], dim=1)
+
+# class SmallUpdateBlock(nn.Module):
+#     def __init__(self, args, hidden_dim=96):
+#         super(SmallUpdateBlock, self).__init__()
+#         self.encoder = SmallMotionEncoder(args)
+#         self.gru = ConvGRU(hidden_dim=hidden_dim, input_dim=96+64+48)
+#         self.flow_head = FlowHead(hidden_dim, hidden_dim=128, out_dim=2)
+#         self.classification_head = FlowHead(hidden_dim, hidden_dim=128, out_dim=3)
+
+#     def forward(self, net, inp, corr, flow, logits):
+#         motion_features = self.encoder(flow, corr, logits)
+#         inp = torch.cat([inp, motion_features], dim=1)
+#         net = self.gru(net, inp)
+#         delta_flow = self.flow_head(net)
+#         delta_logits = self.classification_head(net)
+#         return net, None, delta_flow, delta_logits
+    
+
 class SmallMotionEncoder(nn.Module):
     def __init__(self, args):
         super(SmallMotionEncoder, self).__init__()
@@ -66,38 +107,31 @@ class SmallMotionEncoder(nn.Module):
         self.convc1 = nn.Conv2d(cor_planes, 96, 1, padding=0)
         self.convf1 = nn.Conv2d(2, 64, 7, padding=3)
         self.convf2 = nn.Conv2d(64, 32, 3, padding=1)
-        self.conv_class1 = nn.Conv2d(3, 64, 7, padding=3)
-        self.conv_class2 = nn.Conv2d(64, 32, 3, padding=1)
-        self.conv = nn.Conv2d(96+32+32, 80, 3, padding=1)
+        self.conv = nn.Conv2d(128, 80, 3, padding=1)
 
-    def forward(self, flow, corr, logits):
-        corr = F.relu(self.convc1(corr))
-  
-        flow = F.relu(self.convf1(flow))
-        flow = F.relu(self.convf2(flow))
+    def forward(self, flow, corr):
+        cor = F.relu(self.convc1(corr))
+        flo = F.relu(self.convf1(flow))
+        flo = F.relu(self.convf2(flo))
+        cor_flo = torch.cat([cor, flo], dim=1)
+        out = F.relu(self.conv(cor_flo))
+        return torch.cat([out, flow], dim=1)
 
-        logits = F.relu(self.conv_class1(logits))
-        logits = F.relu(self.conv_class2(logits))
-
-        concat_values = torch.cat([corr, flow, logits], dim=1)
-        out = F.relu(self.conv(concat_values))
-        return torch.cat([out, flow, logits], dim=1)
 
 class SmallUpdateBlock(nn.Module):
     def __init__(self, args, hidden_dim=96):
         super(SmallUpdateBlock, self).__init__()
         self.encoder = SmallMotionEncoder(args)
-        self.gru = ConvGRU(hidden_dim=hidden_dim, input_dim=96+64+48)
-        self.flow_head = FlowHead(hidden_dim, hidden_dim=128, out_dim=2)
-        self.classification_head = FlowHead(hidden_dim, hidden_dim=128, out_dim=3)
+        self.gru = ConvGRU(hidden_dim=hidden_dim, input_dim=82+64)
+        self.flow_head = FlowHead(hidden_dim, hidden_dim=128)
 
-    def forward(self, net, inp, corr, flow, logits):
-        motion_features = self.encoder(flow, corr, logits)
+    def forward(self, net, inp, corr, flow):
+        motion_features = self.encoder(flow, corr)
         inp = torch.cat([inp, motion_features], dim=1)
         net = self.gru(net, inp)
         delta_flow = self.flow_head(net)
-        delta_logits = self.classification_head(net)
-        return net, None, delta_flow, delta_logits
+
+        return net, None, delta_flow
 
 class BasicMotionEncoder(nn.Module):
     def __init__(self, args):

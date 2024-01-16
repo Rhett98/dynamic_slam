@@ -13,8 +13,8 @@ def dynamic_seg_args():
     parser.add_argument('--gpu', type=int, default=0, help='GPU to use [default: GPU 3]')
     parser.add_argument('--multi_gpu', type=str, default=None, help='The gpu [default : null]')
     parser.add_argument('--limit_or_filter', type=bool, default=True, help='if False, filter will reserve 40m~50m points')
-    parser.add_argument('--batch_size', type=int, default=2, help='Batch Size during training [default: 16]')
-    parser.add_argument('--eval_batch_size', type=int, default=4, help='Batch Size during evaling [default: 64]')
+    parser.add_argument('--batch_size', type=int, default=1, help='Batch Size during training [default: 16]')
+    parser.add_argument('--eval_batch_size', type=int, default=2, help='Batch Size during evaling [default: 64]')
     parser.add_argument('--eval_before', type=int, default=0, help='if 1, eval before train')
 
     parser.add_argument('--lidar_root', default='/home/yu/Resp/dataset/sequences', help='Dataset directory [default: /dataset]')

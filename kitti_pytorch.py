@@ -258,12 +258,12 @@ class semantic_points_dataset(data.Dataset):
 
         fn1_dir = os.path.join(lidar_path, '{:06d}.bin'.format(fn1))
         fn2_dir = os.path.join(lidar_path, '{:06d}.bin'.format(fn2))
-        lb2_dir = os.path.join(label_path, '{:06d}.label'.format(fn2))
+        lb1_dir = os.path.join(label_path, '{:06d}.label'.format(fn1))
 
         point1 = np.fromfile(fn1_dir, dtype=np.float32).reshape(-1, 4)
         point2 = np.fromfile(fn2_dir, dtype=np.float32).reshape(-1, 4)
-        label2 = np.fromfile(lb2_dir, dtype=np.int32).reshape((-1))& 0xFFFF
-        label2 = self.map(label2, self.learning_map).reshape(-1, 1)
+        label1 = np.fromfile(lb1_dir, dtype=np.int32).reshape((-1))& 0xFFFF
+        label1 = self.map(label1, self.learning_map).reshape(-1, 1)
         
         T_diff = pose[index_:index_ + 1, :]
         T_diff = T_diff.reshape(3, 4)
@@ -288,9 +288,9 @@ class semantic_points_dataset(data.Dataset):
         pos2 = point2[:, :3].astype(np.float32)
 
 
-        return  torch.from_numpy(pos2).float(), \
-                torch.from_numpy(pos1).float(), \
-                torch.from_numpy(label2).float(),\
+        return  torch.from_numpy(pos1).float(), \
+                torch.from_numpy(pos2).float(), \
+                torch.from_numpy(label1).float(),\
                 sample_id, T_gt, T_trans, T_trans_inv, Tr
 
     def get_index(self, value, mylist):

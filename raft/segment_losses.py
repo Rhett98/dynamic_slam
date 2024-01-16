@@ -175,7 +175,9 @@ class SegmentLoss(nn.Module):
         self.nll_loss = nn.NLLLoss(weight=loss_w)
         self.Ls = Lovasz_softmax(ignore=0)
         
-    def forward(self, label, output):         
+    def forward(self, label, output): 
+        # print(label.shape, output.shape)   
+        label = label.unsqueeze(0)     
         wce, jacc = self.nll_loss(torch.log(output.clamp(min=1e-8)), label.long()) , self.Ls(output, label.long())
         return wce + jacc
 
