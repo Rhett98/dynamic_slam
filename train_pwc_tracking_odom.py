@@ -278,13 +278,14 @@ def eval_pose(model, test_list, epoch):
 
         T = T.reshape(-1, 12)
 
-        fname_txt = os.path.join(log_dir, str(item).zfill(2) + '_pred.npy')
-        data_dir = os.path.join(eval_dir, 'translonet_' + str(item).zfill(2))
+        fname_file = os.path.join(log_dir, str(item).zfill(2) + '_pred.npy')
+        fname_txt = os.path.join(log_dir, str(item).zfill(2) + '_pred.txt')
+        data_dir = os.path.join(eval_dir, 'odometry_' + str(item).zfill(2))
         if not os.path.exists(data_dir):
             os.makedirs(data_dir)
-
-        np.save(fname_txt, T)
-        os.system('cp %s %s' % (fname_txt, data_dir))  ###SAVE THE txt FILE
+        np.save(fname_file, T)
+        np.savetxt(fname_txt, T)
+        os.system('cp %s %s' % (fname_file, data_dir))  ###SAVE THE txt FILE
         os.system('python evaluation.py --result_dir ' + data_dir + ' --eva_seqs ' + str(item).zfill(
             2) + '_pred' + ' --epoch ' + str(epoch))
     return 0

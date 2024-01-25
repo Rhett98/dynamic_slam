@@ -115,7 +115,7 @@ learning_map:
   0 : 0     # "unlabeled"       mapped to "unlabeled" ------------------------mapped
   1 : 0     # "outlier"         mapped to "unlabeled" ------------------------mapped
   9 : 1     # "static"          mapped to "static" ---------------------------mapped
-  10: 1     # "car"             mapped to "static" ---------------------------mapped
+  10: 2     # "car"             mapped to "static" ---------------------------mapped
   11: 1     # "bicycle"         mapped to "static" ---------------------------mapped
   13: 1     # "bus"             mapped to "static" ---------------------------mapped
   15: 1     # "motorcycle"      mapped to "static" ---------------------------mapped
