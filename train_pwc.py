@@ -51,8 +51,8 @@ def main():
 
     global args
 
-    train_dir_list = [1]#[0, 1, 2, 3, 4, 5, 6]
-    test_dir_list = [1]#[7, 8, 9, 10]
+    train_dir_list = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]#[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    test_dir_list = [1,4,8]#[7, 8, 9, 10]
 
     logger = creat_logger(log_dir, args.model_name)
     logger.info('----------------------------------------TRAINING----------------------------------')
@@ -179,7 +179,7 @@ def main():
         train_loss = total_loss / total_seen
         log_print(logger,'EPOCH {} train mean loss: {:04f}'.format(epoch, float(train_loss)))
 
-        if epoch % 5 == 0:
+        if epoch % 1 == 0:
             save_path = os.path.join(checkpoints_dir,
                                      '{}_{:03d}_{:04f}.pth.tar'.format(model.__class__.__name__, epoch, float(train_loss)))
             torch.save({

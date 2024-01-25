@@ -177,7 +177,7 @@ class SegmentLoss(nn.Module):
         
     def forward(self, label, output): 
         # print(label.shape, output.shape)   
-        label = label.unsqueeze(0)     
+        # label = label.unsqueeze(0)     
         wce, jacc = self.nll_loss(torch.log(output.clamp(min=1e-8)), label.long()) , self.Ls(output, label.long())
         return wce + jacc
 

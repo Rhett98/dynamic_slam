@@ -142,8 +142,8 @@ class points_dataset(data.Dataset):
         Tr_inv = np.linalg.inv(Tr)
         T_gt = np.matmul(Tr_inv, T_diff_add)
         T_gt = np.matmul(T_gt, Tr)
-        print("before multi Tr:",T_diff_add)
-        print("after multi Tr:",T_gt)
+        # print("before multi Tr:",T_diff_add)
+        # print("after multi Tr:",T_gt)
 
         if self.is_training:
             T_trans = aug_matrix()

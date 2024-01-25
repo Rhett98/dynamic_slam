@@ -81,8 +81,8 @@ def main():
 
     global args, dataset_config, tb_writer
 
-    train_dir_list = [1]#[0, 1, 2, 3, 4, 5, 6]
-    test_dir_list = [4]#[7, 8, 9, 10]
+    train_dir_list = [0,1,2,3,4,5,6,7,9,10]
+    test_dir_list = [1,2,3,4,5,6,7,8,9,10]#[1,4,8,9,10]#[7, 8, 9, 10]
 
     logger = creat_logger(log_dir, args.model_name)
     logger.info('----------------------------------------TRAINING----------------------------------')
@@ -94,7 +94,7 @@ def main():
     # excel_eval = SaveExcel(test_dir_list, log_dir)sequence_flow_loss
     model = RAFT(args)
     loss_fn1 = SegmentLoss(dataset_config).cuda()
-    loss_fn2 = knnLoss().cuda()
+    # loss_fn2 = knnLoss().cuda()
     # loss_fn2 = KDPointToPointLoss().cuda()
     # train set
     train_dataset = semantic_points_dataset(
@@ -114,18 +114,10 @@ def main():
         worker_init_fn=lambda x: np.random.seed((torch.initial_seed()) % (2 ** 32))
     )#collate_fn=collate_pair,
 
-    if args.multi_gpu is not None:
-        device_ids = [int(x) for x in args.multi_gpu.split(',')]
-        torch.backends.cudnn.benchmark = True
-        model = torch.nn.DataParallel(model, device_ids=device_ids)
-        model.cuda(device_ids[0])
-        log_print(logger, 'multi gpu are:' + str(args.multi_gpu))
-    else:
-
-        torch.backends.cudnn.benchmark = True
-        torch.cuda.set_device(args.gpu)
-        model.cuda()
-        log_print(logger, 'just one gpu is:' + str(args.gpu))
+    torch.backends.cudnn.benchmark = True
+    torch.cuda.set_device(args.gpu)
+    model.cuda()
+    log_print(logger, 'just one gpu is:' + str(args.gpu))
 
     if args.optimizer == 'SGD':
         optimizer = torch.optim.SGD(model.parameters(), lr=args.learning_rate,
@@ -133,6 +125,7 @@ def main():
     elif args.optimizer == 'Adam':
         optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate, betas=(0.9, 0.999),
                                      eps=1e-08, weight_decay=args.weight_decay)
+        
     optimizer.param_groups[0]['initial_lr'] = args.learning_rate
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_stepsize,
                                                 gamma=args.lr_gamma, last_epoch=-1)
@@ -178,22 +171,22 @@ def main():
             # T_inv = torch.linalg.inv(T_gt.cuda().to(torch.float32)) 
             
             # forward
-            t1 = time.time()
             moving_masks = model(pos1, pos2, T_gt.cuda().to(torch.float32))
-            t2 = time.time()
-            # print(img_label2.squeeze().shape)
             loss = sequence_loss(moving_masks, img_label1.squeeze(), loss_fn1)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            # print("infer time:", t2-t1, "loss1 time:",t3-t2, "loss2 time:", t4-t3, "backward time:", time.time()-t4)
             with torch.no_grad():
                 evaluator.reset()
                 argmax = moving_masks[-1].argmax(dim=1)
+                # print(argmax.long().shape, img_label1.squeeze().long().shape)
+                # print(argmax.long())
+                # print("------------")
+                # print(img_label1.squeeze().long())
                 evaluator.addBatch(argmax.long(), img_label1.squeeze().long())
                 accuracy = evaluator.getacc()
                 jaccard, class_jaccard = evaluator.getIoU()
-                
+                # print(jaccard, class_jaccard)
             acc.update(accuracy.item(), len(pos2))
             static_iou.update(class_jaccard[1].item(), len(pos2))
             moving_iou.update(class_jaccard[2].item(), len(pos2))
@@ -201,6 +194,7 @@ def main():
 
             total_loss += loss.cpu().data * args.batch_size
             total_seen += args.batch_size
+            # print("step time:",time.time()-t0 )
 
         scheduler.step()
         
@@ -218,28 +212,29 @@ def main():
         tb_writer.add_scalar("train_static_iou", static_iou.avg, epoch)
         tb_writer.add_scalar("train_moving_iou", moving_iou.avg, epoch)
 
+        
+        save_path = os.path.join(checkpoints_dir,
+                                    '{}_{:03d}_{:04f}.pth.tar'.format(model.__class__.__name__, epoch, float(train_loss)))
+        torch.save({
+            'model_state_dict':  model.state_dict(),
+            'opt_state_dict': optimizer.state_dict(),
+            'scheduler': scheduler.state_dict(),
+            'epoch': epoch
+        }, save_path)
+        log_print(logger, 'Save {}...'.format(model.__class__.__name__))
         if epoch % 5 == 0:
-            save_path = os.path.join(checkpoints_dir,
-                                     '{}_{:03d}_{:04f}.pth.tar'.format(model.__class__.__name__, epoch, float(train_loss)))
-            torch.save({
-                'model_state_dict': model.module.state_dict() if args.multi_gpu else model.state_dict(),
-                'opt_state_dict': optimizer.state_dict(),
-                'scheduler': scheduler.state_dict(),
-                'epoch': epoch
-            }, save_path)
-            log_print(logger, 'Save {}...'.format(model.__class__.__name__))
-
             eval(model, test_dir_list, epoch, logger, tb_writer, evaluator)
             # excel_eval.update(eval_dir)
 
 
 def eval(model, test_list, epoch, logger, tb_writer, evaluator):
     global args
-    acc = AverageMeter()
-    static_iou = AverageMeter()
-    moving_iou = AverageMeter()
     bev_proj_fn = PillarLayer(args.voxel_size,args.point_cloud_range,args.max_num_points,args.max_voxels)
+
     for item in test_list:
+        acc = AverageMeter()
+        static_iou = AverageMeter()
+        moving_iou = AverageMeter()
         test_dataset = semantic_points_dataset(
             is_training = 0,
             num_point = args.num_points,
@@ -252,33 +247,35 @@ def eval(model, test_list, epoch, logger, tb_writer, evaluator):
             shuffle=False,
             num_workers=args.workers,
             collate_fn=collate_pair,
-            pin_memory=True,
+            pin_memory=False,
             worker_init_fn=lambda x: np.random.seed((torch.initial_seed()) % (2 ** 32))
         )
         # switch to evaluate mode
-        model = model.eval()
+        # model = model.eval()
         evaluator.reset()
-        
         with torch.no_grad():
             for batch_id, data in tqdm(enumerate(test_loader), total=len(test_loader), smoothing=0.9):
+                t1= time.time()
                 pos1, pos2, label1, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
                 pos1 = [b.cuda() for b in pos1]
                 pos2 = [b.cuda() for b in pos2]
                 label1 = [b.cuda() for b in label1]
 
                 _, _, _, img1, img_label1 = bev_proj_fn(pos1, label1)
-                T_inv = torch.linalg.inv(T_gt.cuda().to(torch.float32)) 
+                # T_inv = torch.linalg.inv(T_g 4t.cuda().to(torch.float32)) 
                 
                 # forward
-                t1 = time.time()
                 moving_masks = model(pos1, pos2, T_gt.cuda().to(torch.float32))
                 argmax = moving_masks[-1].argmax(dim=1)
+                print(time.time()-t1)
                 # print(argmax)
                 # print(img_label2.squeeze())
+                # print(argmax.long())
+                # print(img_label1.squeeze().long())
                 evaluator.addBatch(argmax.long(), img_label1.squeeze().long())
                 accuracy = evaluator.getacc()
                 jaccard, class_jaccard = evaluator.getIoU()
-                # print(class_jaccard)
+                # print(jaccard, class_jaccard
                 acc.update(accuracy.item(), len(pos2))
                 static_iou.update(class_jaccard[1].item(), len(pos2))
                 moving_iou.update(class_jaccard[2].item(), len(pos2))
