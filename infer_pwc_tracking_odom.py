@@ -42,7 +42,7 @@ def main():
 
     global args
 
-    eval_list = [4,7,8,9,15,18,19]#[4,7,8,9,15,18,19]
+    eval_list = [7]#[4,7,8,9,15,18,19]
 
     logger = creat_logger(log_dir, args.model_name)
     logger.info('----------------------------------------TRAINING----------------------------------')
