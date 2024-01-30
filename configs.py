@@ -12,7 +12,7 @@ def dynamic_seg_args():
     parser.add_argument('--gpu', type=int, default=0, help='GPU to use [default: GPU 3]')
     parser.add_argument('--multi_gpu', type=str, default=None, help='The gpu [default : null]')
     parser.add_argument('--limit_or_filter', type=bool, default=True, help='if False, filter will reserve 40m~50m points')
-    parser.add_argument('--batch_size', type=int, default=1, help='Batch Size during training [default: 16]')
+    parser.add_argument('--batch_size', type=int, default=2, help='Batch Size during training [default: 16]')
     parser.add_argument('--eval_batch_size', type=int, default=2, help='Batch Size during evaling [default: 64]')
     parser.add_argument('--eval_before', type=int, default=0, help='if 1, eval before train')
 
@@ -56,7 +56,7 @@ def dynamic_seg_school_args():
     parser.add_argument('--gpu', type=int, default=0, help='GPU to use [default: GPU 3]')
     parser.add_argument('--multi_gpu', type=str, default=None, help='The gpu [default : null]')
     parser.add_argument('--limit_or_filter', type=bool, default=True, help='if False, filter will reserve 40m~50m points')
-    parser.add_argument('--batch_size', type=int, default=1, help='Batch Size during training [default: 16]')
+    parser.add_argument('--batch_size', type=int, default=2, help='Batch Size during training [default: 16]')
     parser.add_argument('--eval_batch_size', type=int, default=2, help='Batch Size during evaling [default: 64]')
     parser.add_argument('--eval_before', type=int, default=0, help='if 1, eval before train')
 
@@ -178,7 +178,7 @@ def odometry_school_args():
     parser.add_argument('--gpu', type=int, default=0, help='GPU to use [default: GPU 3]')
     parser.add_argument('--multi_gpu', type=str, default=None, help='The gpu [default : null]')
     parser.add_argument('--limit_or_filter', type=bool, default=True, help='if False, filter will reserve 40m~50m points')
-    parser.add_argument('--batch_size', type=int, default=1, help='Batch Size during training [default: 16]')
+    parser.add_argument('--batch_size', type=int, default=2, help='Batch Size during training [default: 16]')
     parser.add_argument('--eval_batch_size', type=int, default=1, help='Batch Size during evaling [default: 64]')
     parser.add_argument('--eval_before', type=int, default=1, help='if 1, eval before train')
 

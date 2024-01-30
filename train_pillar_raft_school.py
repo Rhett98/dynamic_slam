@@ -11,19 +11,19 @@ import yaml
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
-from configs import dynamic_seg_args
+from configs import dynamic_seg_school_args
 from tools.logger_tools import log_print, creat_logger
-from kitti_pytorch import semantic_points_dataset
+from kitti_pytorch import semantic_school_points_dataset
 from raft.pillar_raft import RAFT
 from utils1.collate_functions import collate_pair
 from raft.segment_losses import SegmentLoss, knnLoss
 from ioueval import iouEval
 from pointpillar_encoder import PillarLayer
 
-f = open('dataset_config.yaml')
+f = open('tools/dataset_config_school.yaml')
 dataset_config = yaml.load(f, Loader=yaml.FullLoader)
 
-args = dynamic_seg_args()
+args = dynamic_seg_school_args()
 
 '''CREATE DIR'''
 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -81,8 +81,8 @@ def main():
 
     global args, dataset_config, tb_writer
 
-    train_dir_list = [1]#[0, 1, 2, 3, 4, 5, 6]
-    test_dir_list = [4]#[7, 8, 9, 10]
+    train_dir_list = [3]#[0, 1, 2, 3, 4, 5, 6]
+    test_dir_list = [3]#[7, 8, 9, 10]
 
     logger = creat_logger(log_dir, args.model_name)
     logger.info('----------------------------------------TRAINING----------------------------------')
@@ -97,7 +97,7 @@ def main():
     loss_fn2 = knnLoss().cuda()
     # loss_fn2 = KDPointToPointLoss().cuda()
     # train set
-    train_dataset = semantic_points_dataset(
+    train_dataset = semantic_school_points_dataset(
         is_training = 1,
         num_point=args.num_points,
         data_dir_list=train_dir_list,
@@ -162,7 +162,6 @@ def main():
         static_iou = AverageMeter()
         moving_iou = AverageMeter()
         sematic_loss = AverageMeter()
-        icp_loss = AverageMeter()
         
         optimizer.zero_grad()
         torch.cuda.empty_cache()
@@ -170,57 +169,40 @@ def main():
         print("lr now: ", scheduler.get_last_lr())
         for i, data in tqdm(enumerate(train_loader, 0), total=len(train_loader), smoothing=0.9):
         # for i, data in enumerate(train_loader, 0):  
-
-            pos2, pos1, label2, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
-            pos2 = [b.cuda() for b in pos2]
+            pos1, pos2, label1, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
             pos1 = [b.cuda() for b in pos1]
-            label2 = [b.cuda() for b in label2]
-            # print(sample_id)
-            # print(pos2[0].shape, label2[0].shape)
-            _, _, _, img2, img_label2 = bev_proj_fn(pos2, label2)
+            pos2 = [b.cuda() for b in pos2]
+            label1 = [b.cuda() for b in label1]
 
-            T_inv = torch.linalg.inv(T_gt.cuda().to(torch.float32))
-            
-            # 利用变换矩阵T_gt将pos1转换到pos2
-            trans_pos1 = []
-            for i, p1 in enumerate(pos1, 0):
-                padp = torch.ones(p1.shape[0]).unsqueeze(1).cuda()
-                hom_p1 = torch.cat([p1, padp], dim=1).transpose(0,1)
-                trans_pos1.append(torch.mm(T_inv[i], hom_p1).transpose(0,1)[:,:-1])
+            _, _, _, img1, img_label1 = bev_proj_fn(pos1, label1)
+            # T_inv = torch.linalg.inv(T_gt.cuda().to(torch.float32)) 
             
             # forward
-            t1 = time.time()
-            warp_image1s, moving_predicts = model(trans_pos1, pos2)
-            # movinglabel loss
-            t2 = time.time()
-            # print(img_label2.squeeze().shape)
-            loss1 = sequence_loss(moving_predicts, img_label2.squeeze(), loss_fn1)
-            # knn loss
-            t3 = time.time()
-            loss2 = sequence_loss(warp_image1s, img2, loss_fn2, gap=1)
-            # print("movinglabel loss : ", loss1, "knn loss :", loss2)
-            t4 = time.time()
-            # total loss
-            loss = loss1.cuda() + 0.5*loss2.cuda()
+            moving_masks = model(pos1, pos2, T_gt.cuda().to(torch.float32))
+            loss = sequence_loss(moving_masks, img_label1.squeeze(), loss_fn1)
+            # print(moving_masks, img_label1)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            # print("infer time:", t2-t1, "loss1 time:",t3-t2, "loss2 time:", t4-t3, "backward time:", time.time()-t4)
             with torch.no_grad():
                 evaluator.reset()
-                argmax = moving_predicts[-1].argmax(dim=1)
-                evaluator.addBatch(argmax.long(), img_label2.squeeze().long())
+                argmax = moving_masks[-1].argmax(dim=1)
+                # print(argmax.long().shape, img_label1.squeeze().long().shape)
+                # print(argmax.long())
+                # print("------------")
+                # print(img_label1.squeeze().long())
+                evaluator.addBatch(argmax.long(), img_label1.squeeze().long())
                 accuracy = evaluator.getacc()
                 jaccard, class_jaccard = evaluator.getIoU()
-                
+                # print(jaccard, class_jaccard)
             acc.update(accuracy.item(), len(pos2))
             static_iou.update(class_jaccard[1].item(), len(pos2))
             moving_iou.update(class_jaccard[2].item(), len(pos2))
-            sematic_loss.update(loss1.cpu().data, len(pos2))
-            icp_loss.update(loss2.cpu().data, len(pos2))
+            sematic_loss.update(loss.cpu().data, len(pos2))
 
             total_loss += loss.cpu().data * args.batch_size
             total_seen += args.batch_size
+            # print("step time:",time.time()-t0 )
 
         scheduler.step()
         
@@ -229,39 +211,39 @@ def main():
             param_group['lr'] = lr
 
         train_loss = total_loss / total_seen
-        log_print(logger,'EPOCH {} train mean loss: {:04f} sematic loss: {:04f} icp loss: {:04f} accuracy: {:04f} static iou: {:04f} \
-        moving iou: {:04f}'.format(epoch, float(train_loss), sematic_loss.avg, icp_loss.avg, float(acc.avg), static_iou.avg, moving_iou.avg))
+        log_print(logger,'EPOCH {} train mean loss: {:04f} sematic loss: {:04f} accuracy: {:04f} static iou: {:04f} \
+        moving iou: {:04f}'.format(epoch, float(train_loss), sematic_loss.avg, float(acc.avg), static_iou.avg, moving_iou.avg))
         # write to tensorboard
         tb_writer.add_scalar("train_loss", train_loss, epoch)
         tb_writer.add_scalar("train_sematic_loss", sematic_loss.avg, epoch)
-        tb_writer.add_scalar("train_icp_loss", icp_loss.avg, epoch)
         tb_writer.add_scalar("train_accuracy", acc.avg, epoch)
         tb_writer.add_scalar("train_static_iou", static_iou.avg, epoch)
         tb_writer.add_scalar("train_moving_iou", moving_iou.avg, epoch)
 
+        
+        save_path = os.path.join(checkpoints_dir,
+                                    '{}_{:03d}_{:04f}.pth.tar'.format(model.__class__.__name__, epoch, float(train_loss)))
+        torch.save({
+            'model_state_dict':  model.state_dict(),
+            'opt_state_dict': optimizer.state_dict(),
+            'scheduler': scheduler.state_dict(),
+            'epoch': epoch
+        }, save_path)
+        log_print(logger, 'Save {}...'.format(model.__class__.__name__))
         if epoch % 5 == 0:
-            save_path = os.path.join(checkpoints_dir,
-                                     '{}_{:03d}_{:04f}.pth.tar'.format(model.__class__.__name__, epoch, float(train_loss)))
-            torch.save({
-                'model_state_dict': model.module.state_dict() if args.multi_gpu else model.state_dict(),
-                'opt_state_dict': optimizer.state_dict(),
-                'scheduler': scheduler.state_dict(),
-                'epoch': epoch
-            }, save_path)
-            log_print(logger, 'Save {}...'.format(model.__class__.__name__))
-
             eval(model, test_dir_list, epoch, logger, tb_writer, evaluator)
             # excel_eval.update(eval_dir)
 
 
 def eval(model, test_list, epoch, logger, tb_writer, evaluator):
     global args
-    acc = AverageMeter()
-    static_iou = AverageMeter()
-    moving_iou = AverageMeter()
     bev_proj_fn = PillarLayer(args.voxel_size,args.point_cloud_range,args.max_num_points,args.max_voxels)
+
     for item in test_list:
-        test_dataset = semantic_points_dataset(
+        acc = AverageMeter()
+        static_iou = AverageMeter()
+        moving_iou = AverageMeter()
+        test_dataset = semantic_school_points_dataset(
             is_training = 0,
             num_point = args.num_points,
             data_dir_list = [item],
@@ -273,38 +255,35 @@ def eval(model, test_list, epoch, logger, tb_writer, evaluator):
             shuffle=False,
             num_workers=args.workers,
             collate_fn=collate_pair,
-            pin_memory=True,
+            pin_memory=False,
             worker_init_fn=lambda x: np.random.seed((torch.initial_seed()) % (2 ** 32))
         )
         # switch to evaluate mode
-        model = model.eval()
+        # model = model.eval()
         evaluator.reset()
-        
         with torch.no_grad():
             for batch_id, data in tqdm(enumerate(test_loader), total=len(test_loader), smoothing=0.9):
-                pos2, pos1, label2, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
-                pos2 = [b.cuda() for b in pos2]
+                # t1= time.time()
+                pos1, pos2, label1, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
                 pos1 = [b.cuda() for b in pos1]
-                label2 = [b.cuda() for b in label2]
-                
-                _, _, _, img2, img_label2 = bev_proj_fn(pos2, label2)
-                T_inv = torch.linalg.inv(T_gt.cuda().to(torch.float32))
-                # 利用变换矩阵T_gt将pos1转换到pos2,实现静态点场景流置零
-                trans_pos1 = []
-                for i, p1 in enumerate(pos1, 0):
-                    padp = torch.ones(p1.shape[0]).unsqueeze(1).cuda()
-                    hom_p1 = torch.cat([p1, padp], dim=1).transpose(0,1)
-                    trans_pos1.append(torch.mm(T_inv[i], hom_p1).transpose(0,1)[:,:-1])
+                pos2 = [b.cuda() for b in pos2]
+                label1 = [b.cuda() for b in label1]
 
-                # infer
-                _, output = model(trans_pos1, pos2)
-                argmax = output[-1].argmax(dim=1)
+                _, _, _, img1, img_label1 = bev_proj_fn(pos1, label1)
+                # T_inv = torch.linalg.inv(T_g 4t.cuda().to(torch.float32)) 
+                
+                # forward
+                moving_masks = model(pos1, pos2, T_gt.cuda().to(torch.float32))
+                argmax = moving_masks[-1].argmax(dim=1)
+                # print(time.time()-t1)
                 # print(argmax)
                 # print(img_label2.squeeze())
-                evaluator.addBatch(argmax.long(), img_label2.squeeze().long())
+                # print(argmax.long())
+                # print(img_label1.squeeze().long())
+                evaluator.addBatch(argmax.long(), img_label1.squeeze().long())
                 accuracy = evaluator.getacc()
                 jaccard, class_jaccard = evaluator.getIoU()
-                # print(class_jaccard)
+                # print(jaccard, class_jaccard
                 acc.update(accuracy.item(), len(pos2))
                 static_iou.update(class_jaccard[1].item(), len(pos2))
                 moving_iou.update(class_jaccard[2].item(), len(pos2))

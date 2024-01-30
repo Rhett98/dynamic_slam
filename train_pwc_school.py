@@ -44,8 +44,8 @@ def main():
 
     global args
 
-    train_dir_list = [1]#[0, 2, 3, 4, 5, 6, 7, 9, 10]
-    test_dir_list = [1]#[7, 8, 9, 10]
+    train_dir_list = [3]#[0, 2, 3, 4, 5, 6, 7, 9, 10]
+    test_dir_list = [3]#[7, 8, 9, 10]
 
     logger = creat_logger(log_dir, args.model_name)
     logger.info('----------------------------------------TRAINING----------------------------------')
@@ -286,7 +286,7 @@ def eval_pose(model, test_list, epoch):
             os.makedirs(data_dir)
         np.save(fname_file, T)
         np.savetxt(fname_txt, T)
-        os.system('cp %s %s' % (fname_file, data_dir))  ###SAVE THE txt FILE
+        os.system('cp %s %s' % (fname_txt, data_dir))  ###SAVE THE txt FILE
         os.system('python evaluation.py --result_dir ' + data_dir + ' --eva_seqs ' + str(item).zfill(
             2) + '_pred' + ' --epoch ' + str(epoch))
     return 0

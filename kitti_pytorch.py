@@ -551,7 +551,7 @@ class school_dataset(data.Dataset):
 
         self.data_list = data_dir_list
         self.lidar_root = config.lidar_root
-        self.data_len_sequence = [5836,4814]
+        self.data_len_sequence = [5836,4814,3736,5448]
         # self.mean = [0.485, 0.456, 0.406]
         # self.std = [0.229, 0.224, 0.225]
         
@@ -671,6 +671,10 @@ if __name__ == '__main__':
                 cb+=1
             if i == 2:
                 cc+=1
+        # if cb == 0:
+        #     print("no static:",sample_id)
+        # if cc == 0:
+        #     print("no dynamic:",sample_id)
         total_static_p+=cb
         total_moving_p+=cc
         # print("num of point: ", ca, cb, cc)

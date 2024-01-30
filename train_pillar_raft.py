@@ -20,7 +20,7 @@ from raft.segment_losses import SegmentLoss, knnLoss
 from ioueval import iouEval
 from pointpillar_encoder import PillarLayer
 
-f = open('dataset_config.yaml')
+f = open('tools/ataset_config.yaml')
 dataset_config = yaml.load(f, Loader=yaml.FullLoader)
 
 args = dynamic_seg_args()

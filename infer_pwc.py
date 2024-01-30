@@ -42,7 +42,8 @@ def main():
 
     global args
 
-    eval_list = [0,1, 2,3,4, 5, 6, 7, 8,9,10]#[0, 1, 2, 3, 4, 5, 6]
+    # eval_list = [0,1, 2,3,4, 5, 6, 7, 8,9,10]
+    eval_list = [3]
 
     logger = creat_logger(log_dir, args.model_name)
     logger.info('----------------------------------------TRAINING----------------------------------')
@@ -173,7 +174,7 @@ def main():
             os.makedirs(data_dir)
         np.save(fname_file, T)
         np.savetxt(fname_txt, T)
-        os.system('cp %s %s' % (fname_file, data_dir))  ###SAVE THE txt FILE
+        os.system('cp %s %s' % (fname_txt, data_dir))  ###SAVE THE txt FILE
         # print('python evaluation.py --result_dir ' + data_dir + ' --eva_seqs ' + str(item).zfill(2) + '_pred')
         os.system('python evaluation.py --result_dir ' + data_dir + ' --eva_seqs ' + str(item).zfill(2) + '_pred')
 

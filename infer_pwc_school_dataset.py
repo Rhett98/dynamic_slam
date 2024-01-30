@@ -42,7 +42,7 @@ def main():
 
     global args
 
-    eval_list = [0]
+    eval_list = [3]
 
     logger = creat_logger(log_dir, args.model_name)
     logger.info('----------------------------------------TRAINING----------------------------------')
