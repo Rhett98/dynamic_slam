@@ -287,8 +287,7 @@ def eval_pose(model, test_list, epoch):
         np.save(fname_file, T)
         np.savetxt(fname_txt, T)
         os.system('cp %s %s' % (fname_txt, data_dir))  ###SAVE THE txt FILE
-        os.system('python evaluation.py --result_dir ' + data_dir + ' --eva_seqs ' + str(item).zfill(
-            2) + '_pred' + ' --epoch ' + str(epoch))
+        os.system('python evaluation.py --result_dir ' + data_dir + ' --eva_seqs ' + str(item).zfill(2) + '_pred')
     return 0
 
 
