@@ -208,7 +208,7 @@ class semantic_points_dataset(data.Dataset):
 
         self.data_list = data_dir_list
         self.lidar_root = config.lidar_root
-        self.data_len_sequence = [4540, 1100, 4660, 800, 270, 2760, 1100, 1100, 4070, 1590, 1200]
+        self.data_len_sequence = [4540, 1100, 4660, 800, 270, 1000, 1100, 1100, 4070, 1590, 1200]
         self.mean = [0.485, 0.456, 0.406]
         self.std = [0.229, 0.224, 0.225]
         
@@ -274,6 +274,7 @@ class semantic_points_dataset(data.Dataset):
             fn2 = index_
             sample_id = index_
 
+        path_seq = int(sequence_str_list[index_index])
         pose_path = 'pose/' + sequence_str_list[index_index] + '_diff.npy'
         pose = np.load(pose_path)
         lidar_path = os.path.join(self.lidar_path, sequence_str_list[index_index], 'velodyne')
@@ -313,7 +314,7 @@ class semantic_points_dataset(data.Dataset):
         return  torch.from_numpy(pos1).float(), \
                 torch.from_numpy(pos2).float(), \
                 torch.from_numpy(label1).float(),\
-                sample_id, T_gt, T_trans, T_trans_inv, Tr
+                path_seq, sample_id, T_gt, T_trans, T_trans_inv, Tr
 
     def get_index(self, value, mylist):
         mylist.sort()

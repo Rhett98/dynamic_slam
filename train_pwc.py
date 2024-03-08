@@ -51,8 +51,8 @@ def main():
 
     global args
 
-    train_dir_list = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]#[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-    test_dir_list = [1,4,8]#[7, 8, 9, 10]
+    train_dir_list = [0, 1, 2, 3, 4, 5, 6]#[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    test_dir_list = [7, 8, 9, 10]
 
     logger = creat_logger(log_dir, args.model_name)
     logger.info('----------------------------------------TRAINING----------------------------------')
@@ -134,11 +134,7 @@ def main():
             start_train_one_batch = time.time()
 
             pos2, pos1, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
-            # print(type(sample_id))
-            # sample_id = sample_id.cpu().detach().numpy()
-            # print(type(pos2[0]))
             torch.cuda.synchronize()
-            #print('load_data_time: ', time.time() - start_train_one_batch)
             pos2 = [b.cuda() for b in pos2]
             pos1 = [b.cuda() for b in pos1]
             T_trans = T_trans.cuda().to(torch.float32)
@@ -146,24 +142,16 @@ def main():
             T_gt = T_gt.cuda().to(torch.float32)
             model = model.train()
 
-
-            # visual1 = imback2.cpu().detach().numpy()
-            # np.save('visual/img_90{}'.format(sample_id), visual1)
-
             torch.cuda.synchronize()
-            #print('load_data_time + model_trans_time: ', time.time() - start_train_one_batch)
             l0_q, l0_t, l1_q, l1_t, l2_q, l2_t, l3_q, l3_t, pc1_ouput, q_gt, t_gt, w_x, w_q = model(pos2, pos1, T_gt, T_trans, T_trans_inv)
             loss = get_loss(l0_q, l0_t, l1_q, l1_t, l2_q, l2_t, l3_q, l3_t, q_gt, t_gt, w_x, w_q)
-            # visual2 = xyz1.cpu().detach().numpy()
-            # np.save('visual/pos_proj_90{}'.format(sample_id), visual2)
             torch.cuda.synchronize()
-            #print('load_data_time + model_trans_time + forward ', time.time() - start_train_one_batch)
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             torch.cuda.synchronize()
-            #print('load_data_time + model_trans_time + forward + back_ward ', time.time() - start_train_one_batch)
+
 
             if args.multi_gpu is not None:
                 total_loss += loss.mean().cpu().data * args.batch_size
@@ -179,7 +167,7 @@ def main():
         train_loss = total_loss / total_seen
         log_print(logger,'EPOCH {} train mean loss: {:04f}'.format(epoch, float(train_loss)))
 
-        if epoch % 1 == 0:
+        if epoch % 2 == 0:
             save_path = os.path.join(checkpoints_dir,
                                      '{}_{:03d}_{:04f}.pth.tar'.format(model.__class__.__name__, epoch, float(train_loss)))
             torch.save({
@@ -245,7 +233,6 @@ def eval_pose(model, test_list, epoch):
                 torch.cuda.synchronize()
                 total_time += (time.time() - start_time)
 
-
                 pc1_sample_2048 = pc1_ouput.cpu()
                 l0_q = l0_q.cpu()
                 l0_t = l0_t.cpu()
@@ -272,7 +259,7 @@ def eval_pose(model, test_list, epoch):
                     TT = np.matmul(TT, np.linalg.inv(cur_Tr))
 
                     if line == 0:
-                        T_final = TT
+                        T_final = TT 
                         T = T_final[:3, :]
                         T = T.reshape(1, 1, 12)
                         line += 1
@@ -290,7 +277,7 @@ def eval_pose(model, test_list, epoch):
         fname_file = os.path.join(log_dir, str(item).zfill(2) + '_pred.npy')
         fname_txt = os.path.join(log_dir, str(item).zfill(2) + '_pred.txt')
         data_dir = os.path.join(eval_dir, 'odometry_' + str(item).zfill(2))
-        if not os.path.exists(data_dir):
+        if not os.path.exists(data_dir) :
             os.makedirs(data_dir)
         np.save(fname_file, T)
         np.savetxt(fname_txt, T)

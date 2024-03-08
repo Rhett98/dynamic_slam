@@ -54,7 +54,7 @@ class backend_optimization():
         # 设置噪声
         egoP_egoP = 1e-4
         egoP_objP = 1e-2
-        objP_objP_chgP = 1.0
+        objP_objP_chgP = 1e-2
         chgP_chgP = 0.1
         self.prior_noise = gtsam.noiseModel.Diagonal.Sigmas(np.array([1e-6,1e-6,
                                                         1e-6,1e-6,
@@ -152,7 +152,7 @@ class backend_optimization():
         return new_obj, history_obj
 
     def update_frame_message(self, ego_pose, dyobj_data):
-        print(self.frame_index)
+        # print(self.frame_index)
         # 更新当前帧里程计位姿
         self.ego_pose.append(ego_pose)
         # 加载当前帧数据
@@ -172,6 +172,46 @@ class backend_optimization():
         return current_estimate
 
 
+def aug_matrix():
+    
+    anglex = 0#np.clip(0.01 * np.random.randn(), -0.02, 0.02).astype(float) * np.pi / 4.0
+    angley = 0#np.clip(0.01 * np.random.randn(), -0.02, 0.02).astype(float) * np.pi / 4.0
+    anglez = np.clip(0.05 * np.random.randn(), -0.1, 0.1).astype(float) * np.pi / 4.0
+
+    cosx = np.cos(anglex)
+    cosy = np.cos(angley)
+    cosz = np.cos(anglez)
+    sinx = np.sin(anglex)
+    siny = np.sin(angley)
+    sinz = np.sin(anglez)
+    
+    Rx = np.array([[1, 0, 0],
+                    [0, cosx, -sinx],
+                    [0, sinx, cosx]])
+    Ry = np.array([[cosy, 0, siny],
+                    [0, 1, 0],
+                    [-siny, 0, cosy]])
+    Rz = np.array([[cosz, -sinz, 0],
+                    [sinz, cosz, 0],
+                    [0, 0, 1]])
+
+    scale = np.diag(np.random.uniform(1.00, 1.00, 3).astype(float))
+    R_trans = Rx.dot(Ry).dot(Rz).dot(scale.T)
+
+    xx = np.clip(0.5*np.random.rand()-0.25, -0.5, 0.5).astype(float)
+    yy = np.clip(0.2*np.random.rand()-0.1, -0.2, 0.2).astype(float)
+    zz = 0#np.clip(0.05 * np.random.randn(), -0.15, 0.15).astype(float)
+
+    add_xyz = np.array([[xx], [yy], [zz]])
+
+    T_trans = np.concatenate([R_trans, add_xyz], axis=-1)
+    filler = np.array([0.0, 0.0, 0.0, 1.0])
+    filler = np.expand_dims(filler, axis=0)  ##1*4
+    T_trans = np.concatenate([T_trans, filler], axis=0)  # 4*4
+
+    return T_trans
+
+
 if __name__ == '__main__':
     import os
     eval_list = [4,7,8,9,15,18,19]
@@ -184,21 +224,39 @@ if __name__ == '__main__':
     else:
         axes = fig.axes[0]
     plt.cla()
-    
+    # print(gtsam.Pose3(aug_matrix()))
     ######### 原始obj轨迹 ########
     origin_obj_traj = dict()
+    first = True
+    frame_ego_pose = gtsam.Pose3(gtsam.Rot3.RzRyRx(0, 0, 0), gtsam.Point3(0, 0, 0))
     for frame in range(seq_length[seq_index]):
-        frame_ego_pose = gtsam.Pose3(dataset.get_pose(frame))
-        frame_obj_data = dataset.get_label(frame)
-        current_estimate = local_graph.update_frame_message(frame_ego_pose, frame_obj_data)
-        # 保存原始obj轨迹
-        for obj_data in frame_obj_data:
-            obj_pose = gtsam.Pose3(obj_data.T)
-            global_obj_pose = frame_ego_pose * obj_pose
-            if obj_data.track_id in origin_obj_traj.keys():
-                origin_obj_traj[obj_data.track_id].append(global_obj_pose)
-            else:
-                origin_obj_traj[obj_data.track_id] = [global_obj_pose]
+        if first:
+            frame_ego_pose = gtsam.Pose3(dataset.get_pose(frame))
+            frame_obj_data = dataset.get_label(frame)
+            current_estimate = local_graph.update_frame_message(frame_ego_pose, frame_obj_data)
+            # 保存原始obj轨迹
+            for obj_data in frame_obj_data:
+                obj_pose = gtsam.Pose3(obj_data.T)
+                global_obj_pose = frame_ego_pose * obj_pose
+                if obj_data.track_id in origin_obj_traj.keys():
+                    origin_obj_traj[obj_data.track_id].append(global_obj_pose)
+                else:
+                    origin_obj_traj[obj_data.track_id] = [global_obj_pose]
+            first = False
+        else:
+            if frame_ego_pose.range(gtsam.Pose3(dataset.get_pose(frame)))>0:
+                # print(frame_ego_pose.range(gtsam.Pose3(dataset.get_pose(frame))))
+                frame_ego_pose = gtsam.Pose3(dataset.get_pose(frame))#*gtsam.Pose3(aug_matrix())
+                frame_obj_data = dataset.get_label(frame)
+                current_estimate = local_graph.update_frame_message(frame_ego_pose, frame_obj_data)
+                # 保存原始obj轨迹
+                for obj_data in frame_obj_data:
+                    obj_pose = gtsam.Pose3(obj_data.T)
+                    global_obj_pose = frame_ego_pose * obj_pose
+                    if obj_data.track_id in origin_obj_traj.keys():
+                        origin_obj_traj[obj_data.track_id].append(global_obj_pose)
+                    else:
+                        origin_obj_traj[obj_data.track_id] = [global_obj_pose]
         # if frame==150:
         #     break
      
@@ -210,7 +268,7 @@ if __name__ == '__main__':
     #     for t in traj:
     #         obj_value.insert(flag, t.translation())
     #         flag+=1
-    #     gtsam_plot.plot_3d_points(0, obj_value, 'g*')
+        # gtsam_plot.plot_3d_points(0, obj_value, 'g*')
         
     # ######### 优化后动态目标轨迹 ########
     # obj_traj_value = gtsam.Values()
@@ -240,7 +298,7 @@ if __name__ == '__main__':
     
     ####### 保存优化后的里程计轨迹到txt #########
     T_list = T.reshape(-1, 12)
-    fname_txt = os.path.join('test_data/'+str(seq_index)+'_optimazation.txt')
+    fname_txt = os.path.join('test_data/'+str(seq_index)+'_optimazation_noise.txt')
     np.savetxt(fname_txt, T_list)
     
     ####### 绘制原始里程计轨迹 ########
@@ -250,6 +308,23 @@ if __name__ == '__main__':
         origin_odom_value.insert(f, vv)
         f+=1
     # gtsam_plot.plot_trajectory(0, origin_odom_value,5)
+    ####### 保存优化后的里程计轨迹到txt #########
+    print(len(local_graph.ego_pose))
+    i=0
+    for tj in local_graph.ego_pose:
+        T_final = tj.matrix()
+        if i==0:
+            Tt = T_final[:3, :]
+            Tt = Tt.reshape(1, 1, 12)
+        else:
+            T_current = T_final[:3, :]
+            T_current = T_current.reshape(1, 1, 12)
+            Tt = np.append(Tt, T_current, axis=0)
+        i+=1
+        
+    Tt_list = Tt.reshape(-1, 12)
+    fname_txt = os.path.join('test_data/'+str(seq_index)+'_optimazation_noise_origin.txt')
+    np.savetxt(fname_txt, Tt_list)
     
     ### 绘制动态目标的速度(帧间运动距离) ###
     obj_speed_value = {}
