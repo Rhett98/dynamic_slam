@@ -19,7 +19,7 @@ from kitti_pytorch import semantic_points_dataset
 from raft.raft import RAFT
 from utils1.collate_functions import collate_pair
 from raft.segment_losses import SegmentLoss, KDPointToPointLoss, knnLoss, Lovasz_softmax
-from translo_model_utils import ProjectPCimg2SphericalRing
+from model_utils import ProjectPCimg2SphericalRing
 from ioueval import iouEval
 
 

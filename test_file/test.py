@@ -2,7 +2,7 @@ from scipy.spatial import cKDTree
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from translo_model_utils import ProjectPCimg2SphericalRing
+from model_utils import ProjectPCimg2SphericalRing
 # from knn_cuda import KNN
 import numpy as np
 import time

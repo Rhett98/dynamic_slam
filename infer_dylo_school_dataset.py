@@ -10,15 +10,15 @@ import time
 
 from tqdm import tqdm
 
-from configs import odometry_tracking_args
+from configs import odometry_school_args
 from tools.euler_tools import quat2mat
 from tools.logger_tools import log_print, creat_logger
-from kitti_pytorch import tracking_dataset
-from pwclo_model import pwclo_model, get_loss
+from kitti_pytorch import school_dataset
+from dylo_model import dylo_model, get_loss
 from utils1.collate_functions import collate_pair_wo_label
 
 
-args = odometry_tracking_args()
+args = odometry_school_args()
 
 '''CREATE DIR'''
 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -42,7 +42,7 @@ def main():
 
     global args
 
-    eval_list = [7]#[4,7,8,9,15,18,19]
+    eval_list = [3]
 
     logger = creat_logger(log_dir, args.model_name)
     logger.info('----------------------------------------TRAINING----------------------------------')
@@ -50,7 +50,7 @@ def main():
 
     os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
-    model = pwclo_model(args, args.batch_size, args.H_input, args.W_input, False)
+    model = dylo_model(args, args.batch_size, args.H_input, args.W_input, False)
 
     if args.multi_gpu is not None:
         device_ids = [int(x) for x in args.multi_gpu.split(',')]
@@ -82,7 +82,7 @@ def main():
     log_print(logger, 'load model {}'.format(args.ckpt))
 
     for item in eval_list:
-        dataset = tracking_dataset(
+        dataset = school_dataset(
             is_training = 0,
             num_point = args.num_points,
             data_dir_list = [item],

@@ -10,15 +10,15 @@ import time
 
 from tqdm import tqdm
 
-from configs import odometry_args
+from configs import odometry_tracking_args
 from tools.euler_tools import quat2mat
 from tools.logger_tools import log_print, creat_logger
-from kitti_pytorch import points_dataset
-from pwclo_model import pwclo_model, get_loss
+from kitti_pytorch import tracking_dataset
+from dylo_model import pwclo_model, get_loss
 from utils1.collate_functions import collate_pair_wo_label
 
 
-args = odometry_args()
+args = odometry_tracking_args()
 
 '''CREATE DIR'''
 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -42,15 +42,13 @@ def main():
 
     global args
 
-    # eval_list = [0,1, 2,3,4, 5, 6, 7, 8,9,10]
-    eval_list = [3]
+    eval_list = [7]#[4,7,8,9,15,18,19]
 
     logger = creat_logger(log_dir, args.model_name)
     logger.info('----------------------------------------TRAINING----------------------------------')
     logger.info('PARAMETER ...')
-    logger.info(args)
 
-
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
     model = pwclo_model(args, args.batch_size, args.H_input, args.W_input, False)
 
@@ -84,7 +82,7 @@ def main():
     log_print(logger, 'load model {}'.format(args.ckpt))
 
     for item in eval_list:
-        dataset = points_dataset(
+        dataset = tracking_dataset(
             is_training = 0,
             num_point = args.num_points,
             data_dir_list = [item],
@@ -97,6 +95,7 @@ def main():
             num_workers=args.workers,
             collate_fn=collate_pair_wo_label,
             pin_memory=True,
+            drop_last=True,
             worker_init_fn=lambda x: np.random.seed((torch.initial_seed()) % (2 ** 32))
         )
         line = 0
@@ -141,15 +140,18 @@ def main():
                 for n0 in range(pc1.shape[0]):
                     cur_Tr = Tr[n0, :, :]
                     qq = pred_q[n0:n0 + 1, :]
+                    # qq = q_gt.cpu().numpy()
                     qq = qq.reshape(4)
                     tt = pred_t[n0:n0 + 1, :]
+                    # tt = t_gt.cpu().numpy()
                     tt = tt.reshape(3, 1)
                     RR = quat2mat(qq)
                     filler = np.array([0.0, 0.0, 0.0, 1.0])
                     filler = np.expand_dims(filler, axis=0)  ##1*4
                     TT = np.concatenate([np.concatenate([RR, tt], axis=-1), filler], axis=0)
-                    TT = np.matmul(cur_Tr, TT)
-                    TT = np.matmul(TT, np.linalg.inv(cur_Tr))
+                    
+                    # TT = np.matmul(cur_Tr, TT)
+                    # TT = np.matmul(TT, np.linalg.inv(cur_Tr))
 
                     if line == 0:
                         T_final = TT
@@ -174,7 +176,7 @@ def main():
             os.makedirs(data_dir)
         np.save(fname_file, T)
         np.savetxt(fname_txt, T)
-        os.system('cp %s %s' % (fname_txt, data_dir))  ###SAVE THE txt FILE
+        os.system('cp %s %s' % (fname_file, data_dir))  ###SAVE THE txt FILE
         # print('python evaluation.py --result_dir ' + data_dir + ' --eva_seqs ' + str(item).zfill(2) + '_pred')
         os.system('python evaluation.py --result_dir ' + data_dir + ' --eva_seqs ' + str(item).zfill(2) + '_pred')
 
