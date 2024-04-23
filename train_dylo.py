@@ -10,15 +10,16 @@ import time
 
 from tqdm import tqdm
 
-from configs import odometry_tracking_args
+from configs import odometry_args
 from tools.excel_tools import SaveExcel
-from tools.euler_tools import quat2mat
+from tools.euler_tools import quat2mat, euler2quat, mat2euler
 from tools.logger_tools import log_print, creat_logger
-from kitti_pytorch import tracking_dataset
-from pwclo_model import pwclo_model, get_loss
+from kitti_pytorch import points_dataset
+from dylo_model import dylo_model, get_loss
 from utils1.collate_functions import collate_pair_wo_label
 
-args = odometry_tracking_args()
+
+args = odometry_args()
 
 '''CREATE DIR'''
 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -26,7 +27,7 @@ sys.path.append(base_dir)
 experiment_dir = os.path.join(base_dir, 'experiment')
 if not os.path.exists(experiment_dir): os.makedirs(experiment_dir)
 if not args.task_name:
-    file_dir = os.path.join(experiment_dir, '{}_ODOM_KITTI_{}'.format(args.model_name, str(
+    file_dir = os.path.join(experiment_dir, '{}_KITTI_{}'.format(args.model_name, str(
         datetime.datetime.now().strftime('%Y-%m-%d_%H-%M'))))
 else:
     file_dir = os.path.join(experiment_dir, args.task_name)
@@ -35,8 +36,14 @@ eval_dir = os.path.join(file_dir, 'eval')
 if not os.path.exists(eval_dir): os.makedirs(eval_dir)
 log_dir = os.path.join(file_dir, 'logs')
 if not os.path.exists(log_dir): os.makedirs(log_dir)
-checkpoints_dir = os.path.join(file_dir, 'checkpoints/odom')
+checkpoints_dir = os.path.join(file_dir, 'checkpoints/translonet')
 if not os.path.exists(checkpoints_dir): os.makedirs(checkpoints_dir)
+
+os.system('cp %s %s' % ('train.py', log_dir))
+os.system('cp %s %s' % ('configs.py', log_dir))
+os.system('cp %s %s' % ('translo_model.py', log_dir))
+os.system('cp %s %s' % ('conv_util.py', log_dir))
+os.system('cp %s %s' % ('kitti_pytorch.py', log_dir))
 
 '''LOG'''
 
@@ -44,8 +51,8 @@ def main():
 
     global args
 
-    train_dir_list = [4,7,8,9,15,18,19]#[0, 2, 3, 4, 5, 6, 7, 9, 10]
-    test_dir_list = [4,7,8,9,15,18,19]#[7, 8, 9, 10]
+    train_dir_list = [0, 1, 2, 3, 4, 5, 6]#[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    test_dir_list = [7, 8, 9, 10]
 
     logger = creat_logger(log_dir, args.model_name)
     logger.info('----------------------------------------TRAINING----------------------------------')
@@ -54,10 +61,11 @@ def main():
 
     os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'
 
-    model = pwclo_model(args, args.batch_size, args.H_input, args.W_input, args.is_training)
+    excel_eval = SaveExcel(test_dir_list, log_dir)
+    model = dylo_model(args, args.batch_size, args.H_input, args.W_input, args.is_training)
 
     # train set
-    train_dataset = tracking_dataset(
+    train_dataset = points_dataset(
         is_training = 1,
         num_point=args.num_points,
         data_dir_list=train_dir_list,
@@ -70,9 +78,8 @@ def main():
         num_workers=args.workers,
         collate_fn=collate_pair_wo_label,
         pin_memory=True,
-        drop_last=True,
         worker_init_fn=lambda x: np.random.seed((torch.initial_seed()) % (2 ** 32))
-    )
+    )#collate_fn=collate_pair,
 
     if args.multi_gpu is not None:
         device_ids = [int(x) for x in args.multi_gpu.split(',')]
@@ -109,6 +116,7 @@ def main():
         init_epoch = 0
         log_print(logger, 'Training from scratch')
 
+
     # eval once before training
     
     if args.eval_before == 1:
@@ -126,11 +134,7 @@ def main():
             start_train_one_batch = time.time()
 
             pos2, pos1, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
-            # print(type(sample_id))
-            # sample_id = sample_id.cpu().detach().numpy()
-            # print(type(pos2[0]))
             torch.cuda.synchronize()
-            #print('load_data_time: ', time.time() - start_train_one_batch)
             pos2 = [b.cuda() for b in pos2]
             pos1 = [b.cuda() for b in pos1]
             T_trans = T_trans.cuda().to(torch.float32)
@@ -138,23 +142,16 @@ def main():
             T_gt = T_gt.cuda().to(torch.float32)
             model = model.train()
 
-            # visual1 = imback2.cpu().detach().numpy()
-            # np.save('visual/img_90{}'.format(sample_id), visual1)
-
             torch.cuda.synchronize()
-            #print('load_data_time + model_trans_time: ', time.time() - start_train_one_batch)
             l0_q, l0_t, l1_q, l1_t, l2_q, l2_t, l3_q, l3_t, pc1_ouput, q_gt, t_gt, w_x, w_q = model(pos2, pos1, T_gt, T_trans, T_trans_inv)
             loss = get_loss(l0_q, l0_t, l1_q, l1_t, l2_q, l2_t, l3_q, l3_t, q_gt, t_gt, w_x, w_q)
-            # visual2 = xyz1.cpu().detach().numpy()
-            # np.save('visual/pos_proj_90{}'.format(sample_id), visual2)
             torch.cuda.synchronize()
-            #print('load_data_time + model_trans_time + forward ', time.time() - start_train_one_batch)
 
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             torch.cuda.synchronize()
-            #print('load_data_time + model_trans_time + forward + back_ward ', time.time() - start_train_one_batch)
+
 
             if args.multi_gpu is not None:
                 total_loss += loss.mean().cpu().data * args.batch_size
@@ -170,7 +167,7 @@ def main():
         train_loss = total_loss / total_seen
         log_print(logger,'EPOCH {} train mean loss: {:04f}'.format(epoch, float(train_loss)))
 
-        if epoch % 5 == 0:
+        if epoch % 2 == 0:
             save_path = os.path.join(checkpoints_dir,
                                      '{}_{:03d}_{:04f}.pth.tar'.format(model.__class__.__name__, epoch, float(train_loss)))
             torch.save({
@@ -180,14 +177,14 @@ def main():
                 'epoch': epoch
             }, save_path)
             log_print(logger, 'Save {}...'.format(model.__class__.__name__))
-
+        if epoch % 5 == 0:
             eval_pose(model, test_dir_list, epoch)
             # excel_eval.update(eval_dir)
 
 
 def eval_pose(model, test_list, epoch):
     for item in test_list:
-        test_dataset = tracking_dataset(
+        test_dataset = points_dataset(
             is_training = 0,
             num_point = args.num_points,
             data_dir_list = [item],
@@ -236,14 +233,13 @@ def eval_pose(model, test_list, epoch):
                 torch.cuda.synchronize()
                 total_time += (time.time() - start_time)
 
-
                 pc1_sample_2048 = pc1_ouput.cpu()
-                l0_q = l0_q.cpu()
-                l0_t = l0_t.cpu()
+                l0_q = l3_q.cpu()
+                l0_t = l3_t.cpu()
                 pc1 = pc1_sample_2048.numpy()
                 pred_q = l0_q.numpy()
                 pred_t = l0_t.numpy()
-
+                
                 # deal with a batch_size
                 for n0 in range(pc1.shape[0]):
 
@@ -254,16 +250,19 @@ def eval_pose(model, test_list, epoch):
                     tt = pred_t[n0:n0 + 1, :]
                     tt = tt.reshape(3, 1)
                     RR = quat2mat(qq)
+                    eular = mat2euler(RR)
+                    q = euler2quat(z=eular[0])
+                    RR = quat2mat(q)
                     filler = np.array([0.0, 0.0, 0.0, 1.0])
                     filler = np.expand_dims(filler, axis=0)  ##1*4
 
                     TT = np.concatenate([np.concatenate([RR, tt], axis=-1), filler], axis=0)
 
-                    TT = np.matmul(cur_Tr, TT)
-                    TT = np.matmul(TT, np.linalg.inv(cur_Tr))
+                    # TT = np.matmul(cur_Tr, TT)
+                    # TT = np.matmul(TT, np.linalg.inv(cur_Tr))
 
                     if line == 0:
-                        T_final = TT
+                        T_final = TT 
                         T = T_final[:3, :]
                         T = T.reshape(1, 1, 12)
                         line += 1
@@ -281,13 +280,14 @@ def eval_pose(model, test_list, epoch):
         fname_file = os.path.join(log_dir, str(item).zfill(2) + '_pred.npy')
         fname_txt = os.path.join(log_dir, str(item).zfill(2) + '_pred.txt')
         data_dir = os.path.join(eval_dir, 'odometry_' + str(item).zfill(2))
-        if not os.path.exists(data_dir):
+        if not os.path.exists(data_dir) :
             os.makedirs(data_dir)
         np.save(fname_file, T)
         np.savetxt(fname_txt, T)
         os.system('cp %s %s' % (fname_file, data_dir))  ###SAVE THE txt FILE
+        os.system('cp %s %s' % (fname_txt, data_dir))  ###SAVE THE txt FILE
         os.system('python evaluation.py --result_dir ' + data_dir + ' --eva_seqs ' + str(item).zfill(
-            2) + '_pred' + ' --epoch ' + str(epoch))
+            2) + '_pred')
     return 0
 
 

@@ -8,7 +8,7 @@ import math
 import time
 import numpy as np
 from conv_util import PointNetSaModule, cost_volume, set_upconv_module, FlowPredictor, Conv1d
-from translo_model_utils import ProjectPCimg2SphericalRing, PreProcess, mat2euler, euler2quat, \
+from model_utils import ProjectPCimg2SphericalRing, PreProcess, mat2euler, euler2quat, \
     softmax_valid, quat2mat, inv_q, mul_q_point, mul_point_q
 
 
@@ -35,9 +35,9 @@ def get_selected_idx(batch_size, out_H: int, out_W: int, stride_H: int, stride_W
     return padding_indices, height_indices, width_indices
 
 
-class pwclo_model(nn.Module):
+class dylo_model(nn.Module):
     def __init__(self, args, batch_size, H_input, W_input, is_training, bn_decay=None):
-        super(pwclo_model, self).__init__()
+        super(dylo_model, self).__init__()
 
         #####   initialize the parameters (distance  &  stride ) ######
         self.H_input = H_input; self.W_input = W_input

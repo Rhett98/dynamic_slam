@@ -9,7 +9,7 @@ from raft.update import BasicUpdateBlock, SmallUpdateBlock
 from raft.extractor import BasicEncoder, SmallEncoder
 from raft.corr import CorrBlock, AlternateCorrBlock
 from raft.utils.utils import bilinear_sampler, coords_grid, upflow8
-from translo_model_utils import ProjectPCimg2SphericalRing
+from model_utils import ProjectPCimg2SphericalRing
 
 try:
     autocast = torch.cuda.amp.autocast

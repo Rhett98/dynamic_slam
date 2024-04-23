@@ -180,22 +180,22 @@ def vis_label(input_tensor):
     static_index = torch.where(input_tensor == 1)  
     moving_index = torch.where(input_tensor == 2)  
     # 使用索引tensor将对应的RGB颜色数值赋值给输出tensor  
-    # white
+    # 空白
     output_tensor[0,:,:].index_put_(non_label_index[1:], torch.tensor([1.0])) 
     output_tensor[1,:,:].index_put_(non_label_index[1:], torch.tensor([1.0])) 
     output_tensor[2,:,:].index_put_(non_label_index[1:], torch.tensor([1.0]))  
-    # white
-    output_tensor[0,:,:].index_put_(static_index[1:], torch.tensor([1.0])) 
-    output_tensor[1,:,:].index_put_(static_index[1:], torch.tensor([1.0])) 
-    output_tensor[2,:,:].index_put_(static_index[1:], torch.tensor([1.0]))   
-    # red
+    # 静态点
+    output_tensor[0,:,:].index_put_(static_index[1:], torch.tensor([0.0])) 
+    output_tensor[1,:,:].index_put_(static_index[1:], torch.tensor([0.0])) 
+    output_tensor[2,:,:].index_put_(static_index[1:], torch.tensor([0.0]))   
+    # 动态点
     output_tensor[0,:,:].index_put_(moving_index[1:], torch.tensor([1.0]))
 
     img = np.transpose(output_tensor, (1,2,0))# [H, W, C]
     plt.imshow(img)
-    # plt.ioff()
-    # plt.show()
-    plt.pause(0.1)
+    plt.ioff()
+    plt.show()
+    # plt.pause(0.1)
 
 
 def p2p_distance(p1, p2):
@@ -263,68 +263,70 @@ if __name__ == '__main__':
     point_cloud_range=[-40, -40, -3, 40, 40, 6]#[-48,-48,-3,48,48,6]
     max_num_points=4
     max_voxels=(16000, 40000)
-    batch_pts = []
-    batch_labels = []
-    dataset_config = yaml.load(open('dataset_config.yaml'), Loader=yaml.FullLoader)
-    learning_map = dataset_config["learning_map"]
-    pc1 = np.fromfile("demo_pc/velodyne/000000.bin", dtype=np.float32).reshape(-1,4)
-    pc1 = torch.from_numpy(pc1[:,:4].astype(np.float32)).float()
-    pc2 = np.fromfile("demo_pc/velodyne/000001.bin", dtype=np.float32).reshape(-1,4)
-    pc2 = torch.from_numpy(pc2[:,:4].astype(np.float32)).float()
+    # batch_pts = []
+    # batch_labels = []
+    # dataset_config = yaml.load(open('tools/dataset_config.yaml'), Loader=yaml.FullLoader)
+    # learning_map = dataset_config["learning_map"]
+    # pc1 = np.fromfile("demo_pc/velodyne/000000.bin", dtype=np.float32).reshape(-1,4)
+    # pc1 = torch.from_numpy(pc1[:,:4].astype(np.float32)).float()
+    # pc2 = np.fromfile("demo_pc/velodyne/000001.bin", dtype=np.float32).reshape(-1,4)
+    # pc2 = torch.from_numpy(pc2[:,:4].astype(np.float32)).float()
     
-    label1 = np.fromfile("demo_pc/labels/000000.label", dtype=np.int32).reshape((-1))& 0xFFFF
-    label2 = np.fromfile("demo_pc/labels/000001.label", dtype=np.int32).reshape((-1))& 0xFFFF
-    label1 = map(label1, learning_map).reshape(-1, 1)
-    label2 = map(label2, learning_map).reshape(-1, 1)
-    label1 = torch.from_numpy(label1.astype(np.float32)).float()
-    label2 = torch.from_numpy(label2.astype(np.float32)).float()
+    # label1 = np.fromfile("demo_pc/labels/000000.label", dtype=np.int32).reshape((-1))& 0xFFFF
+    # label2 = np.fromfile("demo_pc/labels/000001.label", dtype=np.int32).reshape((-1))& 0xFFFF
+    # label1 = map(label1, learning_map).reshape(-1, 1)
+    # label2 = map(label2, learning_map).reshape(-1, 1)
+    # label1 = torch.from_numpy(label1.astype(np.float32)).float()
+    # label2 = torch.from_numpy(label2.astype(np.float32)).float()
     
-    batch_pts.append(pc1)
-    batch_labels.append(label1)
-    batch_labels.append(label2)
-    batch_pts.append(pc2)
+    # batch_pts.append(pc1)
+    # batch_labels.append(label1)
+    # batch_labels.append(label2)
+    # batch_pts.append(pc2)
     layer = PillarLayer(voxel_size,point_cloud_range,max_num_points,max_voxels)
-    de = PillarEncoder(voxel_size,point_cloud_range,9,64)
-    pillars, coors_batch, npoints_per_pillar, pillar_center, pillar_label= layer(batch_pts, batch_labels)
-    print(pillars.shape, coors_batch.shape, npoints_per_pillar.shape)
-    feature = de(pillars, coors_batch, npoints_per_pillar)
-    print(feature.shape)
-    # print(pillar_center.permute(0,2,3,1))   
-    # print(pillar_label.permute(0,2,3,1)) 
-    print(pillar_center.shape, pillar_label.shape)  
-    vis_label(pillar_label[1])
+    # de = PillarEncoder(voxel_size,point_cloud_range,9,64)
+    # pillars, coors_batch, npoints_per_pillar, pillar_center, pillar_label= layer(batch_pts, batch_labels)
+    # print(pillars.shape, coors_batch.shape, npoints_per_pillar.shape)
+    # feature = de(pillars, coors_batch, npoints_per_pillar)
+    # print(feature.shape)
+    # # print(pillar_center.permute(0,2,3,1))   
+    # # print(pillar_label.permute(0,2,3,1)) 
+    # print(pillar_center.shape, pillar_label.shape)  
+    # vis_label(pillar_label[1])
     
     
-    # from kitti_pytorch import semantic_points_dataset
-    # from configs import pillar_raftnet_args
-    # from pylab import *
-    # from scipy.cluster.vq import *
+    from kitti_pytorch import semantic_points_dataset
+    from configs import dynamic_seg_args,dynamic_seg_school_args
+    from pylab import *
+    from scipy.cluster.vq import *
     
-    # args = pillar_raftnet_args()
-    # train_dir_list = [1]
+    # args = dynamic_seg_args()
+    args = dynamic_seg_school_args()
+    train_dir_list = [5]
     
-    # train_dataset = semantic_points_dataset(
-    #     is_training = 1,
-    #     num_point=args.num_points,
-    #     data_dir_list=train_dir_list,
-    #     config=args
-    # )
-    # train_loader = torch.utils.data.DataLoader(
-    #     train_dataset,
-    #     batch_size=1,
-    #     shuffle=False,
-    #     num_workers=args.workers,
-    #     collate_fn=collate_pair,
-    #     pin_memory=True,
-    #     drop_last=True,
-    #     worker_init_fn=lambda x: np.random.seed((torch.initial_seed()) % (2 ** 32))
-    # )
+    train_dataset = semantic_points_dataset(
+        is_training = 1,
+        num_point=args.num_points,
+        data_dir_list=train_dir_list,
+        config=args
+    )
+    train_loader = torch.utils.data.DataLoader(
+        train_dataset,
+        batch_size=1,
+        shuffle=True,
+        num_workers=args.workers,
+        collate_fn=collate_pair,
+        pin_memory=True,
+        drop_last=True,
+        worker_init_fn=lambda x: np.random.seed((torch.initial_seed()) % (2 ** 32))
+    )
 
-    # for i, data in enumerate(train_loader, 0):
-    #     pos2, pos1, label2, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
-    #     _,_,_, pillar_center, pillar_label= layer(pos2, label2)
-    #     print(pillar_center.shape, pillar_label.shape)  
-    #     vis_label(pillar_label[0])
+    for i, data in enumerate(train_loader, 0):
+        pos2, pos1, label2, path_seq, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
+        _,_,_, pillar_center, pillar_label= layer(pos2, label2)
+        # print(pillar_center.shape, pillar_label.shape) 
+        print(path_seq, sample_id) 
+        vis_label(pillar_label[0])
 #         moving_pc = get_moving_point(pillar_center,pillar_label)
 #         print("moving pc shape: ", moving_pc[0].shape)
 #         if moving_pc.shape[2]==0:

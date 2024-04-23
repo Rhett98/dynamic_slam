@@ -10,15 +10,15 @@ import time
 
 from tqdm import tqdm
 
-from configs import odometry_school_args
+from configs import odometry_tracking_args
 from tools.excel_tools import SaveExcel
-from tools.euler_tools import quat2mat, euler2quat, mat2euler
+from tools.euler_tools import quat2mat
 from tools.logger_tools import log_print, creat_logger
-from kitti_pytorch import school_dataset
-from pwclo_model import pwclo_model, get_loss
+from kitti_pytorch import tracking_dataset
+from dylo_model import dylo_model, get_loss
 from utils1.collate_functions import collate_pair_wo_label
 
-args = odometry_school_args()
+args = odometry_tracking_args()
 
 '''CREATE DIR'''
 base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -44,8 +44,8 @@ def main():
 
     global args
 
-    train_dir_list = [3]#[0, 2, 3, 4, 5, 6, 7, 9, 10]
-    test_dir_list = [3]#[7, 8, 9, 10]
+    train_dir_list = [4,7,8,9,15,18,19]#[0, 2, 3, 4, 5, 6, 7, 9, 10]
+    test_dir_list = [4,7,8,9,15,18,19]#[7, 8, 9, 10]
 
     logger = creat_logger(log_dir, args.model_name)
     logger.info('----------------------------------------TRAINING----------------------------------')
@@ -54,10 +54,10 @@ def main():
 
     os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'
 
-    model = pwclo_model(args, args.batch_size, args.H_input, args.W_input, args.is_training)
+    model = dylo_model(args, args.batch_size, args.H_input, args.W_input, args.is_training)
 
     # train set
-    train_dataset = school_dataset(
+    train_dataset = tracking_dataset(
         is_training = 1,
         num_point=args.num_points,
         data_dir_list=train_dir_list,
@@ -187,7 +187,7 @@ def main():
 
 def eval_pose(model, test_list, epoch):
     for item in test_list:
-        test_dataset = school_dataset(
+        test_dataset = tracking_dataset(
             is_training = 0,
             num_point = args.num_points,
             data_dir_list = [item],
@@ -248,16 +248,12 @@ def eval_pose(model, test_list, epoch):
                 for n0 in range(pc1.shape[0]):
 
                     cur_Tr = Tr[n0, :, :]
+
                     qq = pred_q[n0:n0 + 1, :]
-                    # qq = q_gt.cpu().numpy()
                     qq = qq.reshape(4)
                     tt = pred_t[n0:n0 + 1, :]
-                    # tt = t_gt.cpu().numpy()
                     tt = tt.reshape(3, 1)
                     RR = quat2mat(qq)
-                    eular = mat2euler(RR)
-                    q = euler2quat(z=eular[0])
-                    RR = quat2mat(q)
                     filler = np.array([0.0, 0.0, 0.0, 1.0])
                     filler = np.expand_dims(filler, axis=0)  ##1*4
 
@@ -289,8 +285,9 @@ def eval_pose(model, test_list, epoch):
             os.makedirs(data_dir)
         np.save(fname_file, T)
         np.savetxt(fname_txt, T)
-        os.system('cp %s %s' % (fname_txt, data_dir))  ###SAVE THE txt FILE
-        os.system('python evaluation.py --gt_dir ./school_gt_pose --result_dir ' + data_dir + ' --eva_seqs ' + str(item).zfill(2) + '_pred')
+        os.system('cp %s %s' % (fname_file, data_dir))  ###SAVE THE txt FILE
+        os.system('python evaluation.py --result_dir ' + data_dir + ' --eva_seqs ' + str(item).zfill(
+            2) + '_pred' + ' --epoch ' + str(epoch))
     return 0
 
 

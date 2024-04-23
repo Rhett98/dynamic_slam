@@ -168,7 +168,7 @@ def main():
         print("lr now: ", scheduler.get_last_lr())
         for i, data in tqdm(enumerate(train_loader, 0), total=len(train_loader), smoothing=0.9):
         # for i, data in enumerate(train_loader, 0):  
-            pos1, pos2, label1, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
+            pos1, pos2, label1, path_seq, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
             pos1 = [b.cuda() for b in pos1]
             pos2 = [b.cuda() for b in pos2]
             label1 = [b.cuda() for b in label1]
@@ -185,14 +185,9 @@ def main():
             with torch.no_grad():
                 evaluator.reset()
                 argmax = moving_masks[-1].argmax(dim=1)
-                # print(argmax.long().shape, img_label1.squeeze().long().shape)
-                # print(argmax.long())
-                # print("------------")
-                # print(img_label1.squeeze().long())
                 evaluator.addBatch(argmax.long(), img_label1.squeeze().long())
                 accuracy = evaluator.getacc()
                 jaccard, class_jaccard = evaluator.getIoU()
-                # print(jaccard, class_jaccard)
             acc.update(accuracy.item(), len(pos2))
             static_iou.update(class_jaccard[1].item(), len(pos2))
             moving_iou.update(class_jaccard[2].item(), len(pos2))
@@ -261,27 +256,19 @@ def eval(model, test_list, epoch, logger, tb_writer, evaluator):
         evaluator.reset()
         with torch.no_grad():
             for batch_id, data in tqdm(enumerate(test_loader), total=len(test_loader), smoothing=0.9):
-                t1= time.time()
                 pos1, pos2, label1, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
                 pos1 = [b.cuda() for b in pos1]
                 pos2 = [b.cuda() for b in pos2]
                 label1 = [b.cuda() for b in label1]
 
                 _, _, _, img1, img_label1 = bev_proj_fn(pos1, label1)
-                # T_inv = torch.linalg.inv(T_g 4t.cuda().to(torch.float32)) 
                 
                 # forward
                 moving_masks = model(pos1, pos2, T_gt.cuda().to(torch.float32))
                 argmax = moving_masks[-1].argmax(dim=1)
-                # print(time.time()-t1)
-                # print(argmax)
-                # print(img_label2.squeeze())
-                # print(argmax.long())
-                # print(img_label1.squeeze().long())
                 evaluator.addBatch(argmax.long(), img_label1.squeeze().long())
                 accuracy = evaluator.getacc()
                 jaccard, class_jaccard = evaluator.getIoU()
-                # print(jaccard, class_jaccard
                 acc.update(accuracy.item(), len(pos2))
                 static_iou.update(class_jaccard[1].item(), len(pos2))
                 moving_iou.update(class_jaccard[2].item(), len(pos2))
