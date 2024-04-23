@@ -12,7 +12,7 @@ from tqdm import tqdm
 
 from configs import odometry_school_args
 from tools.excel_tools import SaveExcel
-from tools.euler_tools import quat2mat
+from tools.euler_tools import quat2mat, euler2quat, mat2euler
 from tools.logger_tools import log_print, creat_logger
 from kitti_pytorch import school_dataset
 from pwclo_model import pwclo_model, get_loss
@@ -255,6 +255,9 @@ def eval_pose(model, test_list, epoch):
                     # tt = t_gt.cpu().numpy()
                     tt = tt.reshape(3, 1)
                     RR = quat2mat(qq)
+                    eular = mat2euler(RR)
+                    q = euler2quat(z=eular[0])
+                    RR = quat2mat(q)
                     filler = np.array([0.0, 0.0, 0.0, 1.0])
                     filler = np.expand_dims(filler, axis=0)  ##1*4
 
@@ -287,7 +290,7 @@ def eval_pose(model, test_list, epoch):
         np.save(fname_file, T)
         np.savetxt(fname_txt, T)
         os.system('cp %s %s' % (fname_txt, data_dir))  ###SAVE THE txt FILE
-        os.system('python evaluation.py --result_dir ' + data_dir + ' --eva_seqs ' + str(item).zfill(2) + '_pred')
+        os.system('python evaluation.py --gt_dir ./school_gt_pose --result_dir ' + data_dir + ' --eva_seqs ' + str(item).zfill(2) + '_pred')
     return 0
 
 

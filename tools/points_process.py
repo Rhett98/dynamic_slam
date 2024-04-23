@@ -105,9 +105,9 @@ def filter_points(points: float, npoints: int = 8192, fov_filter=True, furthest:
 
 def aug_matrix():
     
-    anglex = np.clip(0.01 * np.random.randn(), -0.02, 0.02).astype(float) * np.pi / 4.0
-    angley = np.clip(0.01 * np.random.randn(), -0.02, 0.02).astype(float) * np.pi / 4.0
-    anglez = np.clip(0.05 * np.random.randn(), -0.1, 0.1).astype(float) * np.pi / 4.0
+    anglex = np.clip(0.01 * np.random.randn(), -0.01, 0.01).astype(float) * np.pi / 4.0
+    angley = np.clip(0.01 * np.random.randn(), -0.01, 0.01).astype(float) * np.pi / 4.0
+    anglez = np.clip(0.05 * np.random.randn(), -0.05, 0.05).astype(float) * np.pi / 4.0
 
     cosx = np.cos(anglex)
     cosy = np.cos(angley)
@@ -130,9 +130,9 @@ def aug_matrix():
     R_trans = Rx.dot(Ry).dot(Rz).dot(scale.T)
     # R_trans = Rx.dot(Ry).dot(Rz)
 
-    xx = np.clip(0.5 * np.random.randn(), -1.0, 1.0).astype(float)
-    yy = np.clip(0.1 * np.random.randn(), -0.2, 0.2).astype(float)
-    zz = np.clip(0.05 * np.random.randn(), -0.15, 0.15).astype(float)
+    xx = np.clip(0.5 * np.random.randn(), -0.2, 0.2).astype(float)
+    yy = np.clip(0.1 * np.random.randn(), -0.1, 0.1).astype(float)
+    zz = np.clip(0.05 * np.random.randn(), -0.05, 0.05).astype(float)
 
     add_xyz = np.array([[xx], [yy], [zz]])
 

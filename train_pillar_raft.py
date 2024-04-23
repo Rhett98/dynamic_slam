@@ -20,7 +20,7 @@ from raft.segment_losses import SegmentLoss, knnLoss
 from ioueval import iouEval
 from pointpillar_encoder import PillarLayer
 
-f = open('tools/ataset_config.yaml')
+f = open('tools/dataset_config.yaml')
 dataset_config = yaml.load(f, Loader=yaml.FullLoader)
 
 args = dynamic_seg_args()
@@ -81,8 +81,8 @@ def main():
 
     global args, dataset_config, tb_writer
 
-    train_dir_list = [0,1,2,3,4,5,6,7,9,10]
-    test_dir_list = [1,2,3,4,5,6,7,8,9,10]#[1,4,8,9,10]#[7, 8, 9, 10]
+    train_dir_list = [0,1,2,3,4,5,6,7,8,9,10]
+    test_dir_list =[0,1,2,3,4,5,6,7,8,9,10]#[1,4,8,9,10]#[7, 8, 9, 10]
 
     logger = creat_logger(log_dir, args.model_name)
     logger.info('----------------------------------------TRAINING----------------------------------')
@@ -132,6 +132,12 @@ def main():
 
     if args.ckpt is not None:
         checkpoint = torch.load(args.ckpt)
+        # state_dict = model.state_dict()
+        # ckpt_dict = checkpoint['model_state_dict']
+        # for key in state_dict:
+        #     if key in ckpt_dict:
+        #         state_dict[key] = ckpt_dict[key]
+        # model.load_state_dict(state_dict, strict=True)
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['opt_state_dict'])
         scheduler.load_state_dict(checkpoint['scheduler'])
@@ -251,7 +257,7 @@ def eval(model, test_list, epoch, logger, tb_writer, evaluator):
             worker_init_fn=lambda x: np.random.seed((torch.initial_seed()) % (2 ** 32))
         )
         # switch to evaluate mode
-        # model = model.eval()
+        model = model.eval()
         evaluator.reset()
         with torch.no_grad():
             for batch_id, data in tqdm(enumerate(test_loader), total=len(test_loader), smoothing=0.9):
@@ -267,7 +273,7 @@ def eval(model, test_list, epoch, logger, tb_writer, evaluator):
                 # forward
                 moving_masks = model(pos1, pos2, T_gt.cuda().to(torch.float32))
                 argmax = moving_masks[-1].argmax(dim=1)
-                print(time.time()-t1)
+                # print(time.time()-t1)
                 # print(argmax)
                 # print(img_label2.squeeze())
                 # print(argmax.long())

@@ -165,17 +165,16 @@ class points_dataset(data.Dataset):
         
 
         Tr = self.Tr_list[index_index]
-        Tr_inv = np.linalg.inv(Tr)
-        T_gt = np.matmul(Tr_inv, T_diff_add)
-        T_gt = np.matmul(T_gt, Tr)
-        # print("before multi Tr:",T_diff_add)
-        # print("after multi Tr:",T_gt)
+        # Tr_inv = np.linalg.inv(Tr)
+        # T_gt = np.matmul(Tr_inv, T_diff_add)
+        # T_gt = np.matmul(T_gt, Tr)
+        T_gt = T_diff_add
 
-        if self.is_training:
-            T_trans = aug_matrix()
-        else:
-            T_trans = np.eye(4).astype(np.float32)
-
+        # if self.is_training:
+        #     T_trans = aug_matrix()
+        # else:
+        #     T_trans = np.eye(4).astype(np.float32)
+        T_trans = np.eye(4).astype(np.float32)
         T_trans_inv = np.linalg.inv(T_trans)
 
 
@@ -294,11 +293,11 @@ class semantic_points_dataset(data.Dataset):
         filler = np.array([0.0, 0.0, 0.0, 1.0])
         filler = np.expand_dims(filler, axis=0)  #1*4
         T_diff_add = np.concatenate([T_diff, filler], axis=0)  # 4*4
-
+        T_gt = T_diff_add
         Tr = self.Tr_list[index_index]
-        Tr_inv = np.linalg.inv(Tr)
-        T_gt = np.matmul(Tr_inv, T_diff_add)
-        T_gt = np.matmul(T_gt, Tr)
+        # Tr_inv = np.linalg.inv(Tr)
+        # T_gt = np.matmul(Tr_inv, T_diff_add)
+        # T_gt = np.matmul(T_gt, Tr)
 
         if self.is_training:
             T_trans = aug_matrix()
@@ -618,6 +617,7 @@ class school_dataset(data.Dataset):
             T_trans = aug_matrix()
         else:
             T_trans = np.eye(4).astype(np.float32)
+        # T_trans = np.eye(4).astype(np.float32)
 
         T_trans_inv = np.linalg.inv(T_trans)
 

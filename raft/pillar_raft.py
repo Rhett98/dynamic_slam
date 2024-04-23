@@ -32,7 +32,6 @@ class RAFT(nn.Module):
         self.context_dim = cdim = 64
         args.corr_levels = 3
         args.corr_radius = 3
-        self.H_input, self.W_input = args.H_input, args.W_input
         self.pillar_inchannel = 8
         self.pillar_outchannel = 32
         if 'dropout' not in self.args:

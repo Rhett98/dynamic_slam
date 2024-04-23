@@ -68,47 +68,51 @@ class BottleneckBlock(nn.Module):
 
         num_groups = planes // 8
 
-        if norm_fn == 'group':
-            self.norm1 = nn.GroupNorm(num_groups=num_groups, num_channels=planes//4)
-            self.norm2 = nn.GroupNorm(num_groups=num_groups, num_channels=planes//4)
-            self.norm3 = nn.GroupNorm(num_groups=num_groups, num_channels=planes)
-            if not stride == 1:
-                self.norm4 = nn.GroupNorm(num_groups=num_groups, num_channels=planes)
+        # if norm_fn == 'group':
+        #     self.norm1 = nn.GroupNorm(num_groups=num_groups, num_channels=planes//4)
+        #     self.norm2 = nn.GroupNorm(num_groups=num_groups, num_channels=planes//4)
+        #     self.norm3 = nn.GroupNorm(num_groups=num_groups, num_channels=planes)
+        #     if not stride == 1:
+        #         self.norm4 = nn.GroupNorm(num_groups=num_groups, num_channels=planes)
         
-        elif norm_fn == 'batch':
-            self.norm1 = nn.BatchNorm2d(planes//4)
-            self.norm2 = nn.BatchNorm2d(planes//4)
-            self.norm3 = nn.BatchNorm2d(planes)
-            if not stride == 1:
-                self.norm4 = nn.BatchNorm2d(planes)
+        # elif norm_fn == 'batch':
+        #     self.norm1 = nn.BatchNorm2d(planes//4)
+        #     self.norm2 = nn.BatchNorm2d(planes//4)
+        #     self.norm3 = nn.BatchNorm2d(planes)
+        #     if not stride == 1:
+        #         self.norm4 = nn.BatchNorm2d(planes)
         
-        elif norm_fn == 'instance':
-            self.norm1 = nn.InstanceNorm2d(planes//4)
-            self.norm2 = nn.InstanceNorm2d(planes//4)
-            self.norm3 = nn.InstanceNorm2d(planes)
-            if not stride == 1:
-                self.norm4 = nn.InstanceNorm2d(planes)
+        # elif norm_fn == 'instance':
+        #     self.norm1 = nn.InstanceNorm2d(planes//4)
+        #     self.norm2 = nn.InstanceNorm2d(planes//4)
+        #     self.norm3 = nn.InstanceNorm2d(planes)
+        #     if not stride == 1:
+        #         self.norm4 = nn.InstanceNorm2d(planes)
 
-        elif norm_fn == 'none':
-            self.norm1 = nn.Sequential()
-            self.norm2 = nn.Sequential()
-            self.norm3 = nn.Sequential()
-            if not stride == 1:
-                self.norm4 = nn.Sequential()
+        # elif norm_fn == 'none':
+        #     self.norm1 = nn.Sequential()
+        #     self.norm2 = nn.Sequential()
+        #     self.norm3 = nn.Sequential()
+        #     if not stride == 1:
+        #         self.norm4 = nn.Sequential()
 
         if stride == 1:
             self.downsample = None
         
         else:    
             self.downsample = nn.Sequential(
-                nn.Conv2d(in_planes, planes, kernel_size=1, stride=stride), self.norm4)
+                nn.Conv2d(in_planes, planes, kernel_size=1, stride=stride))
+                # nn.Conv2d(in_planes, planes, kernel_size=1, stride=stride), self.norm4)
 
 
     def forward(self, x):
         y = x
-        y = self.relu(self.norm1(self.conv1(y)))
-        y = self.relu(self.norm2(self.conv2(y)))
-        y = self.relu(self.norm3(self.conv3(y)))
+        # y = self.relu(self.norm1(self.conv1(y)))
+        # y = self.relu(self.norm2(self.conv2(y)))
+        # y = self.relu(self.norm3(self.conv3(y)))
+        y = self.relu(self.conv1(y))
+        y = self.relu(self.conv2(y))
+        y = self.relu(self.conv3(y))
 
         if self.downsample is not None:
             x = self.downsample(x)
@@ -197,17 +201,17 @@ class SmallEncoder(nn.Module):
         super(SmallEncoder, self).__init__()
         self.norm_fn = norm_fn
 
-        if self.norm_fn == 'group':
-            self.norm1 = nn.GroupNorm(num_groups=8, num_channels=32)
+        # if self.norm_fn == 'group':
+        #     self.norm1 = nn.GroupNorm(num_groups=8, num_channels=32)
             
-        elif self.norm_fn == 'batch':
-            self.norm1 = nn.BatchNorm2d(32)
+        # elif self.norm_fn == 'batch':
+        #     self.norm1 = nn.BatchNorm2d(32)
 
-        elif self.norm_fn == 'instance':
-            self.norm1 = nn.InstanceNorm2d(32)
+        # elif self.norm_fn == 'instance':
+        #     self.norm1 = nn.InstanceNorm2d(32)
 
-        elif self.norm_fn == 'none':
-            self.norm1 = nn.Sequential()
+        # elif self.norm_fn == 'none':
+        #     self.norm1 = nn.Sequential()
 
         self.conv1 = nn.Conv2d(32, 32, kernel_size=7, stride=2, padding=3)
         self.relu1 = nn.ReLU(inplace=True)
@@ -250,7 +254,7 @@ class SmallEncoder(nn.Module):
             x = torch.cat(x, dim=0)
 
         x = self.conv1(x)
-        x = self.norm1(x)
+        # x = self.norm1(x)
         x = self.relu1(x)
 
         x = self.layer1(x)
@@ -332,7 +336,7 @@ class MaskDecoder(nn.Module):
         self.norm_fn = norm_fn
         self.in_planes = 16
         self.conv1 = nn.Conv2d(1, self.in_planes, kernel_size=7, stride=1, padding=3)
-        self.norm1 = nn.BatchNorm2d(self.in_planes)
+        # self.norm1 = nn.BatchNorm2d(self.in_planes)
         self.relu1 = nn.ReLU(inplace=True)
 
         self.layer = ResidualBlock(self.in_planes, self.in_planes, self.norm_fn, stride=1)
@@ -351,7 +355,7 @@ class MaskDecoder(nn.Module):
     def forward(self, x):
         '''x:(B,1,h,w)'''
         x = self.conv1(x)
-        x = self.norm1(x)
+        # x = self.norm1(x)
         x = self.relu1(x)
 
         x = self.layer(x)
