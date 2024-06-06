@@ -75,14 +75,11 @@ class points_dataset(data.Dataset):
         """
         self.args = config
         data_dir_list.sort()
-        self.num_point = num_point
         self.is_training = is_training
 
         self.data_list = data_dir_list
         self.lidar_root = config.lidar_root
         self.data_len_sequence = [4540, 1100, 4660, 800, 270, 2760, 1100, 1100, 4070, 1590, 1200]
-        self.mean = [0.485, 0.456, 0.406]
-        self.std = [0.229, 0.224, 0.225]
 
         Tr_tmp = []
         data_sum = [0]
@@ -202,14 +199,11 @@ class semantic_points_dataset(data.Dataset):
         """
         self.args = config
         data_dir_list.sort()
-        self.num_point = num_point
         self.is_training = is_training
 
         self.data_list = data_dir_list
         self.lidar_root = config.lidar_root
         self.data_len_sequence = [4540, 1100, 4660, 800, 270, 1000, 1100, 1100, 4070, 1590, 1200]
-        self.mean = [0.485, 0.456, 0.406]
-        self.std = [0.229, 0.224, 0.225]
         
         fw = open('./tools/dataset_config.yaml')
         dataset_config = yaml.load(fw, Loader=yaml.FullLoader)
@@ -332,7 +326,6 @@ class semantic_school_points_dataset(data.Dataset):
         """
         self.args = config
         data_dir_list.sort()
-        self.num_point = num_point
         self.is_training = is_training
 
         self.data_list = data_dir_list
@@ -436,14 +429,11 @@ class tracking_dataset(data.Dataset):
         """
         self.args = config
         data_dir_list.sort()
-        self.num_point = num_point
         self.is_training = is_training
 
         self.data_list = data_dir_list
         self.lidar_root = config.lidar_root
         self.data_len_sequence = [153,442,232,143,313,296,269,799,389,802,293,372,77,339,105,375,208,144,338,1058,836]
-        self.mean = [0.485, 0.456, 0.406]
-        self.std = [0.229, 0.224, 0.225]
         
         Tr_tmp = []
         data_sum = [0]
@@ -546,14 +536,11 @@ class school_dataset(data.Dataset):
         """
         self.args = config
         data_dir_list.sort()
-        self.num_point = num_point
         self.is_training = is_training
 
         self.data_list = data_dir_list
         self.lidar_root = config.lidar_root
         self.data_len_sequence = [5836,4814,3736,5448]
-        # self.mean = [0.485, 0.456, 0.406]
-        # self.std = [0.229, 0.224, 0.225]
         
         Tr_tmp = []
         data_sum = [0]

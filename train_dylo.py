@@ -36,14 +36,9 @@ eval_dir = os.path.join(file_dir, 'eval')
 if not os.path.exists(eval_dir): os.makedirs(eval_dir)
 log_dir = os.path.join(file_dir, 'logs')
 if not os.path.exists(log_dir): os.makedirs(log_dir)
-checkpoints_dir = os.path.join(file_dir, 'checkpoints/translonet')
+checkpoints_dir = os.path.join(file_dir, 'checkpoints/dylonet')
 if not os.path.exists(checkpoints_dir): os.makedirs(checkpoints_dir)
 
-os.system('cp %s %s' % ('train.py', log_dir))
-os.system('cp %s %s' % ('configs.py', log_dir))
-os.system('cp %s %s' % ('translo_model.py', log_dir))
-os.system('cp %s %s' % ('conv_util.py', log_dir))
-os.system('cp %s %s' % ('kitti_pytorch.py', log_dir))
 
 '''LOG'''
 
@@ -81,18 +76,10 @@ def main():
         worker_init_fn=lambda x: np.random.seed((torch.initial_seed()) % (2 ** 32))
     )#collate_fn=collate_pair,
 
-    if args.multi_gpu is not None:
-        device_ids = [int(x) for x in args.multi_gpu.split(',')]
-        torch.backends.cudnn.benchmark = True
-        model = torch.nn.DataParallel(model, device_ids=device_ids)
-        model.cuda(device_ids[0])
-        log_print(logger, 'multi gpu are:' + str(args.multi_gpu))
-    else:
-
-        torch.backends.cudnn.benchmark = True
-        torch.cuda.set_device(args.gpu)
-        model.cuda()
-        log_print(logger, 'just one gpu is:' + str(args.gpu))
+    torch.backends.cudnn.benchmark = True
+    torch.cuda.set_device(args.gpu)
+    model.cuda()
+    log_print(logger, 'just one gpu is:' + str(args.gpu))
 
     if args.optimizer == 'SGD':
         optimizer = torch.optim.SGD(model.parameters(), lr=args.learning_rate,

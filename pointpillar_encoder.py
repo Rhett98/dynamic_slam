@@ -16,6 +16,8 @@ class PillarLayer(nn.Module):
                                         max_voxels=max_voxels)
         self.x_l = int((point_cloud_range[3] - point_cloud_range[0]) / voxel_size[0])
         self.y_l = int((point_cloud_range[4] - point_cloud_range[1]) / voxel_size[1])
+        self.max_num_points = int(max_num_points)
+        # print("self.max_num_points:",self.max_num_points)
 
     @torch.no_grad()
     def forward(self, batched_pts, batch_labels=None):
@@ -48,6 +50,7 @@ class PillarLayer(nn.Module):
         # calculate center point & label
         center_pt = torch.sum(pillars[:, :, :3], dim=1, keepdim=True) / npoints_per_pillar[:, None, None] # (p1 + p2 + ... + pb, 1, 3)
         batched_pillar_center = []
+        batched_pillar_all = []
         if batch_labels is not None:
             pillar_label = pillars[:, :, 3]
             pillar_label_max,_ = torch.mode(pillar_label.int(), dim=1)
@@ -56,6 +59,12 @@ class PillarLayer(nn.Module):
         for i in range(bs):
             cur_coors_idx = coors_batch[:, 0] == i
             cur_coors = coors_batch[cur_coors_idx, :]
+            # pillar scatter [B,self.max_num_pointss,3,x,y]
+            curr_pillar = pillars.squeeze()[cur_coors_idx]
+            pillar_all = torch.zeros((self.x_l, self.y_l, self.max_num_points, 3), dtype=torch.float32, device=pillars.device)
+            pillar_all[cur_coors[:, 1], cur_coors[:, 2]] = curr_pillar[:,:,:3]
+            pillar_all = pillar_all.permute(3, 2, 1, 0).contiguous()
+            batched_pillar_all.append(pillar_all)
             # center pillar scatter
             curr_pillar_center = center_pt.squeeze()[cur_coors_idx]
             pillar_center = torch.zeros((self.x_l, self.y_l, 3), dtype=torch.float32, device=pillars.device)
@@ -63,19 +72,19 @@ class PillarLayer(nn.Module):
             pillar_center = pillar_center.permute(2, 1, 0).contiguous()
             batched_pillar_center.append(pillar_center)
             if batch_labels is not None:
-                # center pillar scatter
+                # center label scatter
                 curr_pillar_label = pillar_label_max.unsqueeze(1)[cur_coors_idx]
                 pillar_label = torch.zeros((self.x_l, self.y_l, 1), dtype=torch.int32, device=pillars.device)
                 pillar_label[cur_coors[:, 1], cur_coors[:, 2]] = curr_pillar_label
                 pillar_label = pillar_label.permute(2, 1, 0).contiguous()
                 batched_pillar_label.append(pillar_label)
         # batch stack
+        batched_pillar_all = torch.stack(batched_pillar_all, dim=0) # (bs, 3, self.y_l, self.x_l)
+        batched_pillar_center = torch.stack(batched_pillar_center, dim=0) # (bs, 3, self.y_l, self.x_l)
         if batch_labels is not None:
             batched_pillar_label = torch.stack(batched_pillar_label, dim=0) # (bs, 1, self.y_l, self.x_l)
-            batched_pillar_center = torch.stack(batched_pillar_center, dim=0) # (bs, 3, self.y_l, self.x_l)
-            return pillars, coors_batch, npoints_per_pillar, batched_pillar_center, batched_pillar_label
-        batched_pillar_center = torch.stack(batched_pillar_center, dim=0) # (bs, 3, self.y_l, self.x_l)
-        return pillars, coors_batch, npoints_per_pillar, batched_pillar_center
+            return pillars, coors_batch, npoints_per_pillar, batched_pillar_all, batched_pillar_center, batched_pillar_label
+        return pillars, coors_batch, npoints_per_pillar, batched_pillar_all, batched_pillar_center
 
 
 class PillarEncoder(nn.Module):
@@ -263,30 +272,30 @@ if __name__ == '__main__':
     point_cloud_range=[-40, -40, -3, 40, 40, 6]#[-48,-48,-3,48,48,6]
     max_num_points=4
     max_voxels=(16000, 40000)
-    # batch_pts = []
-    # batch_labels = []
-    # dataset_config = yaml.load(open('tools/dataset_config.yaml'), Loader=yaml.FullLoader)
-    # learning_map = dataset_config["learning_map"]
-    # pc1 = np.fromfile("demo_pc/velodyne/000000.bin", dtype=np.float32).reshape(-1,4)
-    # pc1 = torch.from_numpy(pc1[:,:4].astype(np.float32)).float()
-    # pc2 = np.fromfile("demo_pc/velodyne/000001.bin", dtype=np.float32).reshape(-1,4)
-    # pc2 = torch.from_numpy(pc2[:,:4].astype(np.float32)).float()
+    batch_pts = []
+    batch_labels = []
+    dataset_config = yaml.load(open('tools/dataset_config.yaml'), Loader=yaml.FullLoader)
+    learning_map = dataset_config["learning_map"]
+    pc1 = np.fromfile("demo_pc/velodyne/000000.bin", dtype=np.float32).reshape(-1,4)
+    pc1 = torch.from_numpy(pc1[:,:4].astype(np.float32)).float()
+    pc2 = np.fromfile("demo_pc/velodyne/000001.bin", dtype=np.float32).reshape(-1,4)
+    pc2 = torch.from_numpy(pc2[:,:4].astype(np.float32)).float()
     
-    # label1 = np.fromfile("demo_pc/labels/000000.label", dtype=np.int32).reshape((-1))& 0xFFFF
-    # label2 = np.fromfile("demo_pc/labels/000001.label", dtype=np.int32).reshape((-1))& 0xFFFF
-    # label1 = map(label1, learning_map).reshape(-1, 1)
-    # label2 = map(label2, learning_map).reshape(-1, 1)
-    # label1 = torch.from_numpy(label1.astype(np.float32)).float()
-    # label2 = torch.from_numpy(label2.astype(np.float32)).float()
+    label1 = np.fromfile("demo_pc/labels/000000.label", dtype=np.int32).reshape((-1))& 0xFFFF
+    label2 = np.fromfile("demo_pc/labels/000001.label", dtype=np.int32).reshape((-1))& 0xFFFF
+    label1 = map(label1, learning_map).reshape(-1, 1)
+    label2 = map(label2, learning_map).reshape(-1, 1)
+    label1 = torch.from_numpy(label1.astype(np.float32)).float()
+    label2 = torch.from_numpy(label2.astype(np.float32)).float()
     
-    # batch_pts.append(pc1)
-    # batch_labels.append(label1)
-    # batch_labels.append(label2)
-    # batch_pts.append(pc2)
+    batch_pts.append(pc1)
+    batch_labels.append(label1)
+    batch_labels.append(label2)
+    batch_pts.append(pc2)
     layer = PillarLayer(voxel_size,point_cloud_range,max_num_points,max_voxels)
     # de = PillarEncoder(voxel_size,point_cloud_range,9,64)
-    # pillars, coors_batch, npoints_per_pillar, pillar_center, pillar_label= layer(batch_pts, batch_labels)
-    # print(pillars.shape, coors_batch.shape, npoints_per_pillar.shape)
+    pillars, coors_batch, npoints_per_pillar, batched_pillar_all, pillar_center, pillar_label= layer(batch_pts, batch_labels)
+    print(pillars.shape, coors_batch.shape, npoints_per_pillar.shape)
     # feature = de(pillars, coors_batch, npoints_per_pillar)
     # print(feature.shape)
     # # print(pillar_center.permute(0,2,3,1))   
@@ -295,38 +304,39 @@ if __name__ == '__main__':
     # vis_label(pillar_label[1])
     
     
-    from kitti_pytorch import semantic_points_dataset
-    from configs import dynamic_seg_args,dynamic_seg_school_args
-    from pylab import *
-    from scipy.cluster.vq import *
+    # from kitti_pytorch import semantic_points_dataset
+    # from configs import dynamic_seg_args,dynamic_seg_school_args
+    # from pylab import *
+    # from scipy.cluster.vq import *
     
-    # args = dynamic_seg_args()
-    args = dynamic_seg_school_args()
-    train_dir_list = [5]
+    # # args = dynamic_seg_args()
+    # args = dynamic_seg_school_args()
+    # train_dir_list = [5]
     
-    train_dataset = semantic_points_dataset(
-        is_training = 1,
-        num_point=args.num_points,
-        data_dir_list=train_dir_list,
-        config=args
-    )
-    train_loader = torch.utils.data.DataLoader(
-        train_dataset,
-        batch_size=1,
-        shuffle=True,
-        num_workers=args.workers,
-        collate_fn=collate_pair,
-        pin_memory=True,
-        drop_last=True,
-        worker_init_fn=lambda x: np.random.seed((torch.initial_seed()) % (2 ** 32))
-    )
+    # train_dataset = semantic_points_dataset(
+    #     is_training = 1,
+    #     num_point=args.num_points,
+    #     data_dir_list=train_dir_list,
+    #     config=args
+    # )
+    # train_loader = torch.utils.data.DataLoader(
+    #     train_dataset,
+    #     batch_size=1,
+    #     shuffle=True,
+    #     num_workers=args.workers,
+    #     collate_fn=collate_pair,
+    #     pin_memory=True,
+    #     drop_last=True,
+    #     worker_init_fn=lambda x: np.random.seed((torch.initial_seed()) % (2 ** 32))
+    # )
 
-    for i, data in enumerate(train_loader, 0):
-        pos2, pos1, label2, path_seq, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
-        _,_,_, pillar_center, pillar_label= layer(pos2, label2)
-        # print(pillar_center.shape, pillar_label.shape) 
-        print(path_seq, sample_id) 
-        vis_label(pillar_label[0])
+    # for i, data in enumerate(train_loader, 0):
+    #     pos2, pos1, label2, path_seq, sample_id, T_gt, T_trans, T_trans_inv, Tr = data
+    #     _,_,_,_, pillar_center, pillar_label= layer(pos2, label2)
+    #     # print(pillar_center.shape, pillar_label.shape) 
+    #     print(path_seq, sample_id) 
+    #     vis_label(pillar_label[0])
+
 #         moving_pc = get_moving_point(pillar_center,pillar_label)
 #         print("moving pc shape: ", moving_pc[0].shape)
 #         if moving_pc.shape[2]==0:

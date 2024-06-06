@@ -1,17 +1,22 @@
 # dynamic_slam
 
-## sceneflow-guided moving segment
-train_pillar_raft.py 分割网络在kitti数据集训练脚本
+## sceneflow-guided moving segment network
+在kitti数据集训练
+python train_pillar_raft.py --ckpt model_path
 
-train_pillar_raft_school.py 分割网络在自定义校园数据集训练脚本
+在自定义校园数据集训练
+python train_pillar_raft_school.py --ckpt model_path
 
-## odometry
-train_dylo.py  在kitti-odometry数据集
+## dynamic lidar odometry network
+在kitti-odometry数据集
+python train_dylo.py --ckpt model_path 
 
-train_dylo_tracking_odom.py 在kitti-tracking数据集
+在kitti-tracking数据集
+python train_dylo_tracking_odom.py --ckpt model_path 
 
-train_dylo_school.py  在自定义校园数据集
+在自定义校园数据集
+python train_dylo_school.py --ckpt model_path 
 
 ## global optimization
-dynamic_backend_optmization.py 后端因子图
+python dynamic_backend_optmization.py 
 

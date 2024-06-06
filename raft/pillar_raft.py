@@ -101,8 +101,8 @@ class RAFT(nn.Module):
 
     def forward(self, pc1, pc2, T_gt=None, iters=6, flow_init=None):
         """ Estimate optical flow between pair of frames """
-        pillars1, coors_batch1, npoints_per_pillar1, pillar_center1 = self.pillarlayer(pc1)
-        pillars2, coors_batch2, npoints_per_pillar2, _ = self.pillarlayer(pc2)
+        pillars1, coors_batch1, npoints_per_pillar1, _, pillar_center1 = self.pillarlayer(pc1)
+        pillars2, coors_batch2, npoints_per_pillar2, _, _ = self.pillarlayer(pc2)
         pillar_feature1 = self.pillarencoder(pillars1, coors_batch1, npoints_per_pillar1)
         pillar_feature2 = self.pillarencoder(pillars2, coors_batch2, npoints_per_pillar2)
         
